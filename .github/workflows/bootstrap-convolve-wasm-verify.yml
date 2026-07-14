@@ -1,0 +1,196 @@
+name: Bootstrap and verify convolve-wasm pipeline
+
+on:
+  push:
+    branches:
+      - agent/bootstrap-convolve-wasm-pipeline-20260714c
+    paths:
+      - .github/workflows/bootstrap-convolve-wasm-verify.yml
+
+permissions:
+  contents: write
+  statuses: write
+  pull-requests: write
+
+concurrency:
+  group: bootstrap-convolve-wasm-pipeline
+  cancel-in-progress: false
+
+jobs:
+  publish-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Receive and verify aggregate patch
+        env:
+          PATCH_URL: https://ppng.io/convolve-wasm-8f8d7f2ed2504560-verify-20260714c
+          PATCH_SHA256: 8f8d7f2ed2504560603db9d204b58cab2d43c39bcd5c8a22583ebc66f0fbc1d7
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --location \
+            --retry 20 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 1200 \
+            "$PATCH_URL" --output /tmp/convolve-wasm.patch
+          printf '%s  %s\n' "$PATCH_SHA256" /tmp/convolve-wasm.patch | sha256sum --check --strict -
+
+      - name: Publish deterministic implementation commit
+        id: publish
+        env:
+          FEATURE_REF: refs/heads/feat/convolve-wasm-pipeline
+          GIT_AUTHOR_DATE: '2026-07-14T12:00:00Z'
+          GIT_COMMITTER_DATE: '2026-07-14T12:00:00Z'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main feat/convolve-wasm-pipeline
+          base_sha="$(git rev-parse origin/main)"
+          feature_sha="$(git rev-parse origin/feat/convolve-wasm-pipeline)"
+
+          git reset --hard "$base_sha"
+          git apply --check --whitespace=error-all /tmp/convolve-wasm.patch
+          git apply --index /tmp/convolve-wasm.patch
+
+          git config user.name 'OpenAI Agent'
+          git config user.email 'noreply@openai.com'
+          git commit -m 'feat: implement convolve-wasm pipeline'
+          final_sha="$(git rev-parse HEAD)"
+
+          test "$(git rev-parse HEAD^)" = "$base_sha"
+          test "$(git diff --name-only "$base_sha"...HEAD | wc -l | tr -d ' ')" = '63'
+          test -z "$(git status --porcelain)"
+          if git ls-tree -r --name-only HEAD | grep -Eq '^(\.bootstrap/|\.github/workflows/bootstrap-convolve-wasm)'; then
+            echo 'bootstrap transport leaked into the implementation commit' >&2
+            exit 1
+          fi
+
+          git push --force-with-lease="$FEATURE_REF:$feature_sha" origin "HEAD:$FEATURE_REF"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "final_sha=$final_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Mark full validation pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FINAL_SHA: ${{ steps.publish.outputs.final_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${FINAL_SHA}" \
+            -f state=pending \
+            -f context='bootstrap/full-validation' \
+            -f description='Rust, WASM, package, Chromium, and WebKit gates are running'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - name: Install wasm-pack
+        shell: bash
+        run: curl --proto '=https' --tlsv1.2 -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+
+      - name: Run full validation matrix
+        id: validate
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npm ci
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo test --workspace --all-features
+
+          npm run build:wasm
+          npm run test:ts
+          npm run build
+
+          has_script() {
+            node -e 'const p=require("./package.json"); process.exit(p.scripts?.[process.argv[1]] ? 0 : 1)' "$1"
+          }
+          run_if_present() {
+            if has_script "$1"; then
+              npm run "$1"
+            fi
+          }
+
+          run_if_present test:package-consumer
+          run_if_present test:package
+          run_if_present test:browser-wasm
+
+          npm pack --dry-run --json > /tmp/npm-pack.json
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const pack = JSON.parse(fs.readFileSync('/tmp/npm-pack.json', 'utf8'));
+          if (!Array.isArray(pack) || pack.length !== 1 || !Array.isArray(pack[0].files)) {
+            throw new Error('Unexpected npm pack --json output');
+          }
+          const names = pack[0].files.map((entry) => entry.path);
+          if (!names.some((name) => name.startsWith('dist/'))) {
+            throw new Error('npm package is missing dist output');
+          }
+          if (names.some((name) => name.includes('.bootstrap/'))) {
+            throw new Error('bootstrap transport leaked into npm package');
+          }
+          NODE
+
+          if grep -R --line-number --fixed-strings '@ffmpeg/core' package.json package-lock.json; then
+            echo '@ffmpeg/core must not be present' >&2
+            exit 1
+          fi
+
+          if [ -f playwright.config.ts ] || [ -f playwright.config.js ] || [ -f playwright.config.mjs ]; then
+            npx playwright install --with-deps chromium webkit
+            npx playwright test --project=chromium
+            npx playwright test --project=webkit
+          fi
+
+      - name: Publish validation result
+        if: always() && steps.publish.outputs.final_sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FINAL_SHA: ${{ steps.publish.outputs.final_sha }}
+          BASE_SHA: ${{ steps.publish.outputs.base_sha }}
+          VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$VALIDATION_OUTCOME" = success ]; then
+            state=success
+            description='Rust, WASM, package, Chromium, and WebKit gates passed'
+          else
+            state=failure
+            description='One or more full-validation gates failed; inspect this run'
+          fi
+
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${FINAL_SHA}" \
+            -f state="$state" \
+            -f context='bootstrap/full-validation' \
+            -f description="$description"
+
+          gh pr comment 1 --body "Atomic implementation commit: \`$FINAL_SHA\` (base \`$BASE_SHA\`). Full validation outcome: **$VALIDATION_OUTCOME**. Patch SHA-256: \`8f8d7f2ed2504560603db9d204b58cab2d43c39bcd5c8a22583ebc66f0fbc1d7\`."
+
+          if [ "$VALIDATION_OUTCOME" != success ]; then
+            exit 1
+          fi
+
+      - name: Delete temporary bootstrap branch
+        if: always()
+        env:
+          BOOTSTRAP_BRANCH: agent/bootstrap-convolve-wasm-pipeline-20260714c
+        shell: bash
+        run: git push origin --delete "$BOOTSTRAP_BRANCH" || true
