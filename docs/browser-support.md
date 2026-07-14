@@ -29,7 +29,7 @@ The WebKit row is a historical limitation of that local container. It is not a s
 
 ### GitHub Actions record
 
-The authoritative PR integration run for the merged implementation was GitHub Actions run `29374482569` on 2026-07-14. Its `verify` job completed successfully on Ubuntu 24.04.4 (`ubuntu-24.04`).
+The authoritative pre-merge integration run for PR #1 was GitHub Actions run `29374482569` on 2026-07-14. Its `verify` job completed successfully on Ubuntu 24.04.4 (`ubuntu-24.04`) and validated the PR merge ref that was subsequently squash-merged into `main`.
 
 | Browser/runtime | Result | Coverage |
 |---|---:|---|
