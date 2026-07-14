@@ -9,7 +9,7 @@ This document makes the remaining release decisions and evidence requirements ex
 ## Current evidence
 
 - Pull request #1 is merged and closed at the verified baseline commit.
-- GitHub Actions run `29374482569` completed successfully for the integrated implementation.
+- GitHub Actions run `29374482569` was the successful pre-merge PR integration run for the implementation that was subsequently squash-merged.
 - The run passed Rust formatting, linting and tests; the WASM build and Chromium smoke tests; TypeScript/package tests; the library and demo build; Chromium and WebKit E2E; package inspection; and the `@ffmpeg/core` absence check.
 - The package-consumer test creates an actual temporary npm tarball, confirms the package README and license are present, installs the tarball into a clean consumer, and verifies that the consumer build emits local worker and WASM assets.
 - `packages/convolve-wasm/package.json` remains version `0.1.0` with `"private": true`.
@@ -67,18 +67,18 @@ The existing package-consumer test proves that an implementation tarball can be 
 Run from a clean checkout of the exact release candidate:
 
 ```bash
-rm -rf .release-pack
-mkdir .release-pack
+release_pack_dir=$(mktemp -d)
+trap 'rm -rf "$release_pack_dir"' EXIT
 
 npm ci
 npm run build:wasm
 npm run build -w @agunal/convolve-wasm
-npm pack --json --pack-destination .release-pack -w @agunal/convolve-wasm \
-  > .release-pack/pack.json
+npm pack --json --pack-destination "$release_pack_dir" -w @agunal/convolve-wasm \
+  > "$release_pack_dir/pack.json"
 
-cat .release-pack/pack.json
-tar -tzf .release-pack/*.tgz | LC_ALL=C sort
-sha256sum .release-pack/*.tgz
+cat "$release_pack_dir/pack.json"
+tar -tzf "$release_pack_dir"/*.tgz | LC_ALL=C sort
+sha256sum "$release_pack_dir"/*.tgz
 npm ls @ffmpeg/core
 ```
 
