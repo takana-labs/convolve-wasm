@@ -38,6 +38,13 @@ select {
   margin-bottom: 40px;
 }
 
+.brand-mark {
+  display: block;
+  width: 192px;
+  height: 192px;
+  margin: 0 0 24px;
+}
+
 .eyebrow,
 .step {
   margin: 0 0 10px;
@@ -50,6 +57,7 @@ select {
 
 h1,
 h2,
+h3,
 p {
   margin-top: 0;
 }
@@ -72,15 +80,23 @@ h2 {
   font-size: 1.15rem;
 }
 
+h3 {
+  margin-bottom: 8px;
+  font-size: 1rem;
+}
+
 .lede,
-.section-heading p:last-child {
+.section-heading p:last-child,
+.about-card p,
+.site-footer {
   color: #626057;
   line-height: 1.6;
 }
 
 .panel,
 .run-panel,
-.result-panel {
+.result-panel,
+.about-panel {
   border: 1px solid rgb(23 23 20 / 12%);
   border-radius: 18px;
   background: rgb(255 255 255 / 68%);
@@ -100,7 +116,8 @@ h2 {
 }
 
 .file-grid,
-.controls-grid {
+.controls-grid,
+.about-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
@@ -254,13 +271,71 @@ a:focus-visible {
   opacity: 0.4;
 }
 
+.about-panel {
+  margin-top: 18px;
+  padding: 28px;
+}
+
+.about-card {
+  padding: 20px;
+  border-radius: 14px;
+  background: #eee8dc;
+}
+
+.about-card p {
+  margin-bottom: 0;
+}
+
+.about-card code {
+  font-size: 0.9em;
+}
+
+.resource-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.resource-links a {
+  border: 1px solid rgb(23 23 20 / 13%);
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: #fffdfa;
+  color: #292823;
+  font-size: 0.86rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.resource-links a:hover {
+  border-color: rgb(183 71 41 / 45%);
+  color: #9f3921;
+}
+
+.site-footer {
+  padding: 24px 8px 0;
+  text-align: center;
+  font-size: 0.86rem;
+}
+
+.site-footer p {
+  margin-bottom: 0;
+}
+
 @media (max-width: 680px) {
   .shell {
     padding-top: 36px;
   }
 
+  .brand-mark {
+    width: 144px;
+    height: 144px;
+  }
+
   .file-grid,
   .controls-grid,
+  .about-grid,
   .result-actions {
     grid-template-columns: 1fr;
   }
