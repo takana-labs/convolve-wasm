@@ -12,70 +12,157 @@ permissions:
   contents: read
 
 jobs:
-  macos-probe:
+  fixture:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - name: Probe Safari and Apple audio tools
+      - name: Generate stereo 48 kHz HE-AAC and WAV impulse
         shell: bash
         run: |
-          set -euo pipefail
-          {
-            echo '=== sw_vers ==='
-            sw_vers
-            echo '=== safaridriver ==='
-            /usr/bin/safaridriver --version || true
-            echo '=== Safari bundle versions ==='
-            defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString || true
-            defaults read /Applications/Safari.app/Contents/Info CFBundleVersion || true
-            echo '=== afconvert file formats ==='
-            /usr/bin/afconvert -hf || true
-            echo '=== afconvert help ==='
-            /usr/bin/afconvert -h || true
-            echo '=== Safari binary ==='
-            ls -la /Applications/Safari.app/Contents/MacOS/Safari || true
-          } > probe-macos.txt 2>&1
-          cat probe-macos.txt
+          set -euxo pipefail
+          python3 tests/release-browser/generate_fixture.py
+          /usr/bin/afconvert release-browser-fixture/source.wav \
+            -o release-browser-fixture/fixture.m4a \
+            -f m4af -d aach -b 64000
+          /usr/bin/afinfo release-browser-fixture/fixture.m4a \
+            | tee release-browser-fixture/fixture-info.txt
+          grep -q 'aach' release-browser-fixture/fixture-info.txt
+          shasum -a 256 release-browser-fixture/fixture.m4a \
+            release-browser-fixture/impulse.wav \
+            | tee release-browser-fixture/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: probe-macos
-          path: probe-macos.txt
+          name: release-browser-fixture
+          path: |
+            release-browser-fixture/fixture.m4a
+            release-browser-fixture/impulse.wav
+            release-browser-fixture/fixture-info.txt
+            release-browser-fixture/SHA256SUMS
           if-no-files-found: error
+          retention-days: 14
 
-  windows-probe:
+  windows-matrix:
+    needs: fixture
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
-      - name: Probe Chrome and Edge
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.14.0 --locked
+      - name: Install and build exact demo/package path
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/download-artifact@v5
+        with:
+          name: release-browser-fixture
+          path: release-browser-fixture
+      - name: Start capture server
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Continue'
-          $lines = New-Object System.Collections.Generic.List[string]
-          $lines.Add('=== Windows ===')
-          $os = Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber | Out-String
-          $lines.Add($os)
-          $paths = @(
-            "$Env:ProgramFiles\Google\Chrome\Application\chrome.exe",
-            "${Env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
-            "$Env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
-            "${Env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
-          )
-          foreach ($path in $paths) {
-            if (Test-Path $path) {
-              $lines.Add("FOUND $path")
-              $info = (Get-Item $path).VersionInfo
-              $lines.Add("FileVersion=$($info.FileVersion)")
-              $lines.Add("ProductVersion=$($info.ProductVersion)")
+          New-Item -ItemType Directory -Force -Path release-browser-results/windows | Out-Null
+          $process = Start-Process -FilePath python -ArgumentList @(
+            'tests/release-browser/capture_server.py',
+            'apps/demo/dist',
+            'release-browser-results/windows',
+            '4173'
+          ) -PassThru
+          "SERVER_PID=$($process.Id)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          for ($attempt = 0; $attempt -lt 60; $attempt++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4173 | Out-Null
+              exit 0
+            } catch {
+              Start-Sleep -Seconds 1
             }
           }
-          $lines.Add("node=$(node --version)")
-          $lines.Add("npm=$(npm --version)")
-          $lines | Set-Content -Path probe-windows.txt
-          Get-Content probe-windows.txt
+          throw 'capture server did not start'
+      - name: Run branded Chrome and Edge matrix
+        shell: pwsh
+        env:
+          FIXTURE_DIR: release-browser-fixture
+          CAPTURE_DIR: release-browser-results/windows
+          BASE_URL: http://127.0.0.1:4173
+        run: node tests/release-browser/windows_matrix.cjs
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: probe-windows
-          path: probe-windows.txt
-          if-no-files-found: error
+          name: release-browser-windows-results
+          path: release-browser-results/windows
+          if-no-files-found: warn
+          retention-days: 30
+
+  safari-matrix:
+    needs: fixture
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.14.0 --locked
+      - name: Install and build exact demo/package path
+        shell: bash
+        run: |
+          set -euxo pipefail
+          npm ci
+          npm run build
+      - uses: actions/download-artifact@v5
+        with:
+          name: release-browser-fixture
+          path: release-browser-fixture
+      - name: Configure Safari WebDriver
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m pip install --user selenium
+          sudo /usr/bin/safaridriver --enable
+          /usr/bin/safaridriver --version
+          sw_vers
+      - name: Start capture server
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p release-browser-results/macos
+          python3 tests/release-browser/capture_server.py \
+            apps/demo/dist release-browser-results/macos 4173 \
+            > release-browser-results/macos/server.log 2>&1 &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:4173 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat release-browser-results/macos/server.log
+          exit 1
+      - name: Run real Safari matrix
+        shell: bash
+        env:
+          FIXTURE_DIR: release-browser-fixture
+          CAPTURE_DIR: release-browser-results/macos
+          BASE_URL: http://127.0.0.1:4173
+        run: |
+          set -euxo pipefail
+          python3 tests/release-browser/safari_matrix.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-browser-safari-results
+          path: release-browser-results/macos
+          if-no-files-found: warn
+          retention-days: 30
