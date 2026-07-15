@@ -20,15 +20,28 @@ jobs:
       - name: Probe Safari and Apple audio tools
         shell: bash
         run: |
-          set -euxo pipefail
-          sw_vers
-          system_profiler SPSoftwareDataType
-          /usr/bin/safaridriver --version || true
-          defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString || true
-          defaults read /Applications/Safari.app/Contents/Info CFBundleVersion || true
-          /usr/bin/afconvert -hf || true
-          /usr/bin/afconvert -h || true
-          ls -la /Applications/Safari.app/Contents/MacOS/Safari || true
+          set -euo pipefail
+          {
+            echo '=== sw_vers ==='
+            sw_vers
+            echo '=== safaridriver ==='
+            /usr/bin/safaridriver --version || true
+            echo '=== Safari bundle versions ==='
+            defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString || true
+            defaults read /Applications/Safari.app/Contents/Info CFBundleVersion || true
+            echo '=== afconvert file formats ==='
+            /usr/bin/afconvert -hf || true
+            echo '=== afconvert help ==='
+            /usr/bin/afconvert -h || true
+            echo '=== Safari binary ==='
+            ls -la /Applications/Safari.app/Contents/MacOS/Safari || true
+          } > probe-macos.txt 2>&1
+          cat probe-macos.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: probe-macos
+          path: probe-macos.txt
+          if-no-files-found: error
 
   windows-probe:
     runs-on: windows-latest
@@ -39,7 +52,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber
+          $lines = New-Object System.Collections.Generic.List[string]
+          $lines.Add('=== Windows ===')
+          $os = Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber | Out-String
+          $lines.Add($os)
           $paths = @(
             "$Env:ProgramFiles\Google\Chrome\Application\chrome.exe",
             "${Env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
@@ -48,10 +64,18 @@ jobs:
           )
           foreach ($path in $paths) {
             if (Test-Path $path) {
-              Write-Host "FOUND $path"
-              & $path --version
-              (Get-Item $path).VersionInfo | Format-List FileVersion, ProductVersion
+              $lines.Add("FOUND $path")
+              $info = (Get-Item $path).VersionInfo
+              $lines.Add("FileVersion=$($info.FileVersion)")
+              $lines.Add("ProductVersion=$($info.ProductVersion)")
             }
           }
-          node --version
-          npm --version
+          $lines.Add("node=$(node --version)")
+          $lines.Add("npm=$(npm --version)")
+          $lines | Set-Content -Path probe-windows.txt
+          Get-Content probe-windows.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: probe-windows
+          path: probe-windows.txt
+          if-no-files-found: error
