@@ -100,6 +100,8 @@ test -z "$(git status --porcelain)"
 
 release_pack_dir=${RELEASE_PACK_DIR:-"$(mktemp -d)"}
 mkdir -p "$release_pack_dir"
+test -z "$(find "$release_pack_dir" -mindepth 1 -maxdepth 1 -print -quit)"
+printf 'Source commit: %s\n' "$source_commit"
 printf 'Release artifact directory: %s\n' "$release_pack_dir"
 
 npm ci
@@ -113,7 +115,7 @@ test -n "$tarball"
 
 cat "$release_pack_dir/pack.json"
 tar -tzf "$tarball" | LC_ALL=C sort
-sha256sum "$tarball"
+sha256sum "$tarball" | tee "$release_pack_dir/SHA256SUMS"
 
 mkdir "$release_pack_dir/unpacked"
 tar -xzf "$tarball" -C "$release_pack_dir/unpacked"
@@ -134,7 +136,7 @@ if [ "$ffmpeg_status" -eq 0 ] || grep -q '@ffmpeg/core@' <<<"$ffmpeg_tree"; then
 fi
 ```
 
-Do not delete or overwrite `release_pack_dir` after inspection. Preserve it until the artifact is either published or the release is explicitly abandoned. In automation, upload the `.tgz`, `pack.json`, and SHA-256 record before the workspace is cleaned up.
+Do not delete or overwrite `release_pack_dir` after inspection. Preserve it until the artifact is either published or the release is explicitly abandoned. In automation, upload the `.tgz`, `pack.json`, and `SHA256SUMS` before the workspace is cleaned up.
 
 Record all of the following in the release approval record:
 
@@ -162,7 +164,7 @@ Acceptance criteria:
 - `@ffmpeg/core` is absent from both the dependency tree and the extracted packed contents;
 - the recorded SHA-256 corresponds to the exact `.tgz` approved and later supplied to the publish command.
 
-If release automation uses separate verification and publication jobs, the verification job must upload this exact `.tgz` and its SHA-256. The publication job must download it, verify the recorded hash, and publish it without running `npm pack` again.
+If release automation uses separate verification and publication jobs, the verification job must upload this exact `.tgz` and its `SHA256SUMS`. The publication job must download both, verify the recorded hash, and publish the tarball without running `npm pack` again.
 
 ## Clean-room release verification
 
