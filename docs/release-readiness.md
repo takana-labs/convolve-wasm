@@ -1,6 +1,6 @@
 # v0.1.0 final release readiness
 
-**Status:** Draft final release candidate. The package metadata and real-browser HE-AAC evidence are prepared on `release/v0.1.0-final`, but merge, tagging, GitHub release creation, and npm publication remain prohibited until the registry controls, final review, and explicit authorization gates below are satisfied.
+**Status:** Draft final release candidate. Package metadata and the real-browser HE-AAC evidence are prepared on `release/v0.1.0-final`. Merge requires final diff review and explicit owner authorization. Tagging, GitHub release creation, and npm publication remain separately prohibited until the exact-artifact and first-publication controls below are satisfied.
 
 **Merged readiness baseline:** `main` at `60e79cf38174fc0d90df47cbee5f21d274821a43`.
 
@@ -19,7 +19,8 @@ The owner authorized preparation of these release choices:
 | npm access | Public scoped package |
 | Access enforcement | `publishConfig.access: "public"` |
 | Provenance | Required |
-| Registry authentication | GitHub Actions trusted publishing with OIDC; do not use a long-lived npm publish token |
+| First-publication authentication | One-time short-lived granular npm token, scoped to the `@agunal` package scope, used only by the protected publish workflow and revoked immediately afterward |
+| Future registry authentication | GitHub Actions trusted publishing with OIDC; no long-lived npm publish token |
 | Package description | `Browser-side stereo audio convolution powered by a Rust/WebAssembly DSP core.` |
 | Repository metadata | `agunal/convolve-wasm`, package directory `packages/convolve-wasm` |
 | Support metadata | GitHub issues and repository README |
@@ -31,7 +32,7 @@ The owner authorized preparation of these release choices:
 | Generated WASM | Remains ignored in the source tree; only built distribution assets are packed |
 | FFmpeg boundary | `@ffmpeg/core` remains absent |
 
-These choices authorize preparation and review only. They do not authorize merge, tag creation, GitHub release creation, registry changes, or publication. Current-head CI evidence is recorded in the final release pull-request description so updating that evidence does not change the release branch commit.
+These choices authorize preparation and review only. They do not authorize merge, tag creation, GitHub release creation, credential creation, registry changes, or publication. Current-head CI evidence is recorded in the final release pull-request description so updating that evidence does not change the release branch commit.
 
 ## Gate status before merge
 
@@ -47,32 +48,47 @@ These choices authorize preparation and review only. They do not authorize merge
 - [x] Confirm WAVE_FORMAT_EXTENSIBLE PCM24, stereo, 48 kHz metadata and browser-specific frame formulas.
 - [x] Confirm finite non-silent peak metadata, no clipping, and no page errors.
 
-Evidence: GitHub Actions run `29392630499`, where `fixture`, `windows-matrix`, and `safari-matrix` all completed successfully. The report records the input hashes, output hashes, artifact IDs, and artifact digests.
+Evidence: GitHub Actions run `29392630499`, where `fixture`, `windows-matrix`, and `safari-matrix` all completed successfully. The report records input hashes, output hashes, artifact IDs, and artifact digests.
 
-### Remaining blockers
+### Completed npm bootstrap investigation
 
-- [ ] Configure npm trusted publishing for this repository and workflow.
-- [ ] Configure a protected GitHub environment named `npm` with an owner approval gate.
-- [ ] Confirm that npm trusted publishing supports this first publication path; if not, stop and separately review any bootstrap path.
+- [x] Query the public registry for `@agunal/convolve-wasm` and `@agunal/convolve-wasm@0.1.0`.
+- [x] Confirm both returned registry `E404` on 2026-07-15 in GitHub Actions run `29393336600`.
+- [x] Confirm the package is therefore brand-new rather than an existing package with an unpublished version.
+- [x] Record that npm trusted publishing is configured from an existing package's settings and cannot be attached before that package exists.
+- [x] Record that npm staged publishing cannot create a brand-new package.
+- [x] Add a fail-closed one-time bootstrap path that publishes only the already inspected tarball with provenance.
+
+### Remaining merge gates
+
 - [ ] Review and approve the complete final release pull-request diff.
 - [ ] Obtain explicit owner authorization before merging the final release pull request.
 
-## Trusted-publisher configuration
+The GitHub environment and npm credential are post-merge, pre-publication controls. They do not need to exist merely to merge code because the publish workflow is manual, requires a release tag, exact commit, exact candidate run, exact tarball hash, an explicit bootstrap acknowledgement, and an environment-scoped secret.
 
-Before publication, configure npm trusted publishing with these exact values:
+## Why v0.1.0 needs a bootstrap publish
 
-```text
-provider:          GitHub Actions
-npm organization: agunal
-repository:        convolve-wasm
-workflow:          publish.yml
-environment:       npm
-allowed action:    npm publish
-```
+npm trusted publishing is configured from the package settings page. The registry probe proved that `@agunal/convolve-wasm` does not yet exist, so no package settings page exists. npm staged publishing also requires an existing package and cannot create the first version.
 
-Configure a GitHub Actions environment named `npm` with required owner review. The publish workflow uses `id-token: write` and must not receive an `NPM_TOKEN` secret.
+Therefore v0.1.0 requires one tightly controlled traditional authentication event. That event must still occur on a GitHub-hosted runner with `id-token: write` and `--provenance`, so the first public version receives provenance. After publication, the token path must be removed operationally by revoking the credential and configuring trusted publishing.
 
-If npm does not allow a trusted publisher to be configured before the package's first publication, stop. Do not silently fall back to a long-lived token. Any bootstrap publication path needs a separate security review and explicit authorization.
+Do not request, paste, commit, log, or transmit the npm token through chat, issues, pull requests, or repository files.
+
+## Required post-merge GitHub and npm controls
+
+Before running the publish workflow:
+
+1. Create a GitHub Actions environment named exactly `npm`.
+2. Add the owner as a required reviewer. Keep self-review behavior consistent with the chosen release operator.
+3. Create a granular npm token with:
+   - read/write package permission;
+   - access limited to the `@agunal` scope needed for the first package;
+   - bypass 2FA enabled for the non-interactive workflow;
+   - the shortest practical expiration, with a one-day maximum target for this release operation.
+4. Store it only as the `NPM_BOOTSTRAP_TOKEN` secret in the protected `npm` environment.
+5. Do not add an `NPM_TOKEN` repository secret or any long-lived credential.
+
+The available connector cannot administer GitHub deployment environments and has no authenticated npm account access, so these account-bound controls cannot be created from this project session.
 
 ## Release workflows
 
@@ -89,28 +105,30 @@ The workflow then runs `npm pack` once, inspects the exact `.tgz`, writes `pack.
 
 ### Publish Inspected npm Artifact
 
-`.github/workflows/publish.yml` is a separate manual workflow protected by the `npm` environment. It requires:
+`.github/workflows/publish.yml` is a manual, one-time v0.1.0 bootstrap workflow protected by the `npm` environment. It requires:
 
 ```text
-source_commit:    exact tagged source SHA
-artifact_run_id:  successful Build Release Candidate workflow run
-tarball_sha256:   approved lowercase SHA-256
+source_commit:             exact tagged source SHA
+artifact_run_id:           successful Build Release Candidate workflow run
+tarball_sha256:            approved lowercase SHA-256
+bootstrap_acknowledgement: BOOTSTRAP @agunal/convolve-wasm@0.1.0
 ```
 
 It verifies:
 
-- the full input formats;
+- every input format and the exact bootstrap acknowledgement;
 - the `v0.1.0` tag points to `source_commit`;
 - the candidate run is the successful manual `Build Release Candidate` workflow;
 - the downloaded tarball matches `SHA256SUMS` and the separately approved hash;
 - `RELEASE-METADATA.txt` names the same source commit;
 - the packed manifest is the approved public `0.1.0` manifest;
 - `@ffmpeg/core` is absent;
-- the version is not already present in the registry, and a registry/network failure is not misread as absence.
+- both the package and version are absent from npm, and a registry/network failure is not misread as absence;
+- the protected environment contains a nonempty `NPM_BOOTSTRAP_TOKEN` secret.
 
-Only after all checks pass does it run `npm publish` on the downloaded `.tgz`. It does not rebuild or repack.
+Only after all checks pass does it publish the downloaded `.tgz` with `--access public --provenance`. It does not rebuild or repack. It then verifies that `0.1.0` is visible in the registry.
 
-## Artifact-specific authorization
+## Artifact-specific authorization and publication sequence
 
 After the final release pull request is merged:
 
@@ -131,21 +149,39 @@ inspector:
 inspection date:
 ```
 
-4. Obtain a new explicit authorization naming the exact source commit, candidate run ID, tarball filename, and SHA-256.
+4. Obtain a new explicit authorization naming the exact source commit, candidate run ID, tarball filename, SHA-256, and one-time bootstrap mode.
 5. Create `v0.1.0` on that exact source commit only after authorization.
-6. Run **Publish Inspected npm Artifact** with those exact approved values.
-7. Create a GitHub release only if separately authorized.
+6. Configure the protected `npm` environment and short-lived `NPM_BOOTSTRAP_TOKEN` secret.
+7. Run **Publish Inspected npm Artifact** with the exact approved values and acknowledgement.
+8. Verify the package and provenance on npm.
+9. Immediately revoke the granular bootstrap token and delete the environment secret.
+10. In the new package settings, configure trusted publishing with:
 
-Any mismatch in commit, workflow run, filename, hash, package metadata, browser matrix, tag, registry configuration, or downloaded artifact voids the authorization and stops the release.
+```text
+provider:          GitHub Actions
+GitHub user:       agunal
+repository:        convolve-wasm
+workflow:          publish.yml
+environment:       npm
+allowed action:    npm publish
+```
+
+11. Set package publishing access to require 2FA and disallow traditional tokens.
+12. Create a GitHub release only if separately authorized.
+
+Future versions must use OIDC trusted publishing, not the v0.1.0 bootstrap token path.
+
+Any mismatch in commit, workflow run, filename, hash, package metadata, browser matrix, tag, registry state, bootstrap acknowledgement, environment, credential, or downloaded artifact voids the authorization and stops the release.
 
 ## Current prohibited actions
 
-Until every remaining blocker is satisfied:
+Until the relevant gate above is satisfied:
 
-- do not merge the final release pull request;
-- do not create `v0.1.0`;
-- do not create a GitHub release;
+- do not merge without explicit merge authorization;
+- do not create `v0.1.0` before exact-artifact authorization;
+- do not create a GitHub release without separate authorization;
 - do not run either release workflow against an unapproved commit;
-- do not publish to npm;
-- do not add a long-lived npm publish token;
+- do not publish any rebuilt or repacked artifact;
+- do not create or retain a long-lived npm publish token;
+- do not disclose the bootstrap token outside the protected GitHub environment;
 - do not commit private HE-AAC audio, deterministic browser fixtures, output audio, or generated source-tree WASM.
