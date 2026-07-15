@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import struct
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 FIXTURE_DIR = Path(os.environ.get("FIXTURE_DIR", "release-browser-fixture")).resolve()
 CAPTURE_DIR = Path(os.environ.get("CAPTURE_DIR", "release-browser-results/macos")).resolve()
 BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:4173")
+PUBLIC_FIXTURE_DIR = Path("apps/demo/dist/release-browser-fixture").resolve()
 PCM_SUBFORMAT_GUID = bytes.fromhex("0100000000001000800000aa00389b71")
 CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -100,15 +102,57 @@ def run_in_page(driver: webdriver.Safari, key: str, body: str, timeout: int = 90
     raise RuntimeError(f"in-page operation timed out: {key}")
 
 
-def decode_one(driver: webdriver.Safari, selector: str, kind: str) -> dict:
+def stage_same_origin_files() -> None:
+    PUBLIC_FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(FIXTURE_DIR / "fixture.m4a", PUBLIC_FIXTURE_DIR / "fixture.m4a")
+    shutil.copy2(FIXTURE_DIR / "impulse.wav", PUBLIC_FIXTURE_DIR / "impulse.wav")
+
+
+def load_files_in_browser(driver: webdriver.Safari) -> None:
     result = run_in_page(
+        driver,
+        "load-release-files",
+        """
+        async function makeFile(url, name, type) {
+          const response = await fetch(url, { cache: 'no-store' });
+          if (!response.ok) throw new Error(`fixture fetch failed: ${response.status}`);
+          return new File([await response.arrayBuffer()], name, { type });
+        }
+        function setFile(selector, file) {
+          const input = document.querySelector(selector);
+          if (!input) throw new Error(`missing ${selector}`);
+          const transfer = new DataTransfer();
+          transfer.items.add(file);
+          input.files = transfer.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        const a = await makeFile('/release-browser-fixture/fixture.m4a', 'fixture.m4a', 'audio/mp4');
+        const b = await makeFile('/release-browser-fixture/impulse.wav', 'impulse.wav', 'audio/wav');
+        setFile('#audio-a', a);
+        setFile('#audio-b', b);
+        return {
+          a: { name: a.name, size: a.size, type: a.type },
+          b: { name: b.name, size: b.size, type: b.type },
+        };
+        """,
+    )
+    require(result["state"] == "done", f"Safari fixture staging failed: {result}")
+
+
+def decode_one(driver: webdriver.Safari, selector: str, kind: str) -> dict:
+    context_expression = (
+        "new OfflineAudioContext(2, 1, 48000)"
+        if kind == "offline"
+        else "new AudioContext({ sampleRate: 48000 })"
+    )
+    return run_in_page(
         driver,
         f"decode-{selector}-{kind}",
         f"""
         const input = document.querySelector({json.dumps(selector)});
         if (!input?.files?.[0]) throw new Error('missing input');
         const bytes = await input.files[0].arrayBuffer();
-        const context = {"new OfflineAudioContext(2, 1, 48000)" if kind == "offline" else "new AudioContext({ sampleRate: 48000 })"};
+        const context = {context_expression};
         try {{
           const decoded = await context.decodeAudioData(bytes.slice(0));
           return {{
@@ -123,7 +167,6 @@ def decode_one(driver: webdriver.Safari, selector: str, kind: str) -> dict:
         }}
         """,
     )
-    return result
 
 
 def media_one(driver: webdriver.Safari, selector: str) -> dict:
@@ -224,7 +267,8 @@ def run_mode(driver: webdriver.Safari, mode: str, expected_frames: int) -> dict:
         checkbox.click()
     driver.find_element(By.ID, "run").click()
     WebDriverWait(driver, 180).until(
-        lambda current: current.find_element(By.ID, "status").get_attribute("data-state") in {"done", "error"}
+        lambda current: current.find_element(By.ID, "status").get_attribute("data-state")
+        in {"done", "error"}
     )
     status_element = driver.find_element(By.ID, "status")
     state_name = status_element.get_attribute("data-state")
@@ -233,7 +277,7 @@ def run_mode(driver: webdriver.Safari, mode: str, expected_frames: int) -> dict:
     require(state["outputFrames"] == expected_frames, f"Safari/{mode}: expected {expected_frames}, got {state['outputFrames']}")
     require(state["wav"]["frames"] == expected_frames, f"Safari/{mode}: WAV frame mismatch")
     require(state["readyState"] >= 2, f"Safari/{mode}: audio not ready")
-    require(state["playResult"] == "started", f"Safari/{mode}: {state['playResult']}")
+    require(state["playResult"] == "started", f"Safari/{mode}: playback failed")
     require(state["href"].startswith("blob:") and state["disabled"] == "false", f"Safari/{mode}: download not enabled")
     require(state["filename"] == "convolved-audio.wav", f"Safari/{mode}: wrong filename")
     require(not state["pageErrors"], f"Safari/{mode}: page errors {state['pageErrors']}")
@@ -245,6 +289,7 @@ def run_mode(driver: webdriver.Safari, mode: str, expected_frames: int) -> dict:
 
 
 def main() -> None:
+    stage_same_origin_files()
     driver = webdriver.Safari(options=webdriver.SafariOptions())
     try:
         driver.get(BASE_URL)
@@ -255,8 +300,7 @@ def main() -> None:
             window.addEventListener('unhandledrejection', event => window.__releaseErrors.push(`rejection: ${event.reason?.message || String(event.reason)}`));
             """
         )
-        driver.find_element(By.ID, "audio-a").send_keys(str(FIXTURE_DIR / "fixture.m4a"))
-        driver.find_element(By.ID, "audio-b").send_keys(str(FIXTURE_DIR / "impulse.wav"))
+        load_files_in_browser(driver)
 
         diagnostics = collect_diagnostics(driver)
         (CAPTURE_DIR / "safari-decode-diagnostics.json").write_text(json.dumps(diagnostics, indent=2))
