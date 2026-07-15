@@ -28,6 +28,10 @@ export default defineConfig({
     command:
       "npm run preview -w @agunal/convolve-demo -- --host 127.0.0.1 --port 4173",
     url: "http://127.0.0.1:4173/convolve-wasm/",
+    env: {
+      ...process.env,
+      CONVOLVE_DEMO_BASE: "/convolve-wasm/",
+    },
     reuseExistingServer: false,
     timeout: 120_000,
   },
