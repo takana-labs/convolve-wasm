@@ -5,6 +5,7 @@ const { chromium } = require('playwright');
 const fixtureDir = path.resolve(process.env.FIXTURE_DIR || 'release-browser-fixture');
 const captureDir = path.resolve(process.env.CAPTURE_DIR || 'release-browser-results/windows');
 const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:4173';
+const pcmSubformatGuid = Buffer.from('0100000000001000800000aa00389b71', 'hex');
 fs.mkdirSync(captureDir, { recursive: true });
 
 function fail(message) {
@@ -23,8 +24,14 @@ function parseWav(filePath) {
     const size = bytes.readUInt32LE(offset + 4);
     const start = offset + 8;
     if (id === 'fmt ') {
+      const audioFormat = bytes.readUInt16LE(start);
+      const extensiblePcm =
+        audioFormat === 0xfffe &&
+        size >= 40 &&
+        bytes.subarray(start + 24, start + 40).equals(pcmSubformatGuid);
       format = {
-        audioFormat: bytes.readUInt16LE(start),
+        audioFormat,
+        extensiblePcm,
         channels: bytes.readUInt16LE(start + 2),
         sampleRate: bytes.readUInt32LE(start + 4),
         blockAlign: bytes.readUInt16LE(start + 12),
@@ -36,7 +43,9 @@ function parseWav(filePath) {
     offset = start + size + (size % 2);
   }
   if (!format || !data) fail(`${filePath}: missing fmt or data chunk`);
-  if (format.audioFormat !== 1) fail(`${filePath}: expected PCM format`);
+  if (format.audioFormat !== 1 && !format.extensiblePcm) {
+    fail(`${filePath}: expected PCM or PCM extensible format ${JSON.stringify(format)}`);
+  }
   if (format.channels !== 2 || format.sampleRate !== 48000 || format.bitsPerSample !== 24) {
     fail(`${filePath}: unexpected format ${JSON.stringify(format)}`);
   }
