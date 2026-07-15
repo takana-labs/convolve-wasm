@@ -173,7 +173,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          published=$(npm view @agunal/convolve-wasm@0.1.0 version)
-          test "$published" = '0.1.0'
-          echo 'Immediately revoke NPM_BOOTSTRAP_TOKEN, configure npm trusted publishing,'
-          echo 'and set package publishing access to disallow traditional tokens.'
+          for attempt in $(seq 1 12); do
+            set +e
+            published=$(npm view @agunal/convolve-wasm@0.1.0 version 2>/dev/null)
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ] && [ "$published" = '0.1.0' ]; then
+              echo 'First release is visible in the npm registry.'
+              echo 'Immediately revoke NPM_BOOTSTRAP_TOKEN, configure npm trusted publishing,'
+              echo 'and set package publishing access to disallow traditional tokens.'
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'Publish returned successfully, but the version did not become visible within 60 seconds.' >&2
+          exit 1
