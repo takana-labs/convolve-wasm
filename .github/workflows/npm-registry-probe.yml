@@ -1,0 +1,42 @@
+name: npm Registry Probe
+
+on:
+  pull_request:
+    branches:
+      - release/v0.1.0-final
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Check package and version existence
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@11.15.0
+          {
+            echo 'package=@agunal/convolve-wasm'
+            echo 'checked_at='"$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            set +e
+            package_output=$(npm view @agunal/convolve-wasm name version 2>&1)
+            package_status=$?
+            version_output=$(npm view @agunal/convolve-wasm@0.1.0 version 2>&1)
+            version_status=$?
+            set -e
+            echo "package_status=$package_status"
+            printf 'package_output=%s\n' "$package_output"
+            echo "version_status=$version_status"
+            printf 'version_output=%s\n' "$version_output"
+          } | tee npm-registry-probe.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-registry-probe
+          path: npm-registry-probe.txt
+          if-no-files-found: error
