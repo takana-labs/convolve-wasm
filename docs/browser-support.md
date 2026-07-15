@@ -41,6 +41,14 @@ That run also passed Rust formatting, linting and tests, the WASM build, TypeScr
 
 GitHub CI validates the portable WAV path in Chromium and WebKit. It does not prove native HE-AAC availability in desktop Chrome, Edge, or Safari because M4A decoding depends on each browser and operating system's codec stack.
 
+## Private HE-AAC fixture preflight
+
+The exact private HE-AAC fixture and supplied WAV were preflighted on 2026-07-15. Local Chromium 144 on Debian 13 decoded both through `OfflineAudioContext.decodeAudioData()` without page errors. Independent processing preflight produced formula-correct stereo 48 kHz PCM24 outputs, and Chromium successfully played and downloaded both generated WAVs with byte-identical SHA-256 round trips.
+
+See [the complete private-fixture preflight record](testing/2026-07-15-private-fixture-preflight.md) for input hashes, codec metadata, decoded frame counts, beat-grid results, output formulas, peak data and limitations.
+
+This evidence does not complete a release-browser row: the supplied WAV is program audio rather than an impulse, the repository's worker/WASM application path was not executed in that preflight, and Linux Chromium is not current desktop Google Chrome, Edge or Safari.
+
 ## Manual HE-AAC release matrix
 
 No private HE-AAC fixture is committed. Every row below remains a release blocker until the exact browser, operating system, codec profile, inspection tool, and results are recorded.
