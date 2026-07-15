@@ -1,83 +1,50 @@
-# v0.1.0 release readiness
+# v0.1.0 final release readiness
 
-**Status:** Draft release gate; not approved for tagging or publication.
+**Status:** Draft final release candidate. The package metadata is prepared on `release/v0.1.0-final`, but merge, tagging, GitHub release creation, and npm publication remain prohibited until every blocker and authorization gate below is satisfied.
 
-**Verified baseline:** `main` at `a088b5bf57aa3f256da79de86a0de2d21a265684` on 2026-07-14.
+**Merged readiness baseline:** `main` at `60e79cf38174fc0d90df47cbee5f21d274821a43`.
 
-This document makes the remaining release decisions and evidence requirements explicit. It does not authorize removal of `private: true`, creation of a tag or GitHub release, or publication to npm.
+**Final release branch:** `release/v0.1.0-final`.
 
-This documentation-only readiness change may merge while the package remains private. A separate final release pull request must contain the approved browser evidence, manifest metadata, and release notes. The final packed artifact must be built from the exact commit produced by merging that later release pull request.
+The manual desktop HE-AAC matrix is not available in the current execution environment and remains a hard release blocker. No blank row or automated WebKit result may be converted into a manual pass.
+
+## Approved owner decisions
+
+The owner instructed the final release phase to proceed on 2026-07-14. That instruction approves preparation of the following choices in a draft final release pull request; it does not authorize merge, tag creation, GitHub release creation, or npm publication.
+
+| Decision | Approved v0.1.0 choice | Implementation state |
+|---|---|---|
+| Public version | `0.1.0` | Prepared on final release branch |
+| Package visibility | Remove `private: true` | Prepared on final release branch |
+| npm access | Public scoped package | Enforced with `publishConfig.access: "public"` |
+| Provenance | Required | Enforced with `publishConfig.provenance: true` and npm trusted publishing |
+| Registry authentication | GitHub Actions trusted publishing with OIDC; no long-lived publish token | Manual workflows added; registry-side trust still must be configured |
+| Package description | `Browser-side stereo audio convolution powered by a Rust/WebAssembly DSP core.` | Prepared |
+| Repository metadata | `agunal/convolve-wasm`, package directory `packages/convolve-wasm` | Prepared |
+| Support metadata | GitHub issues and repository README | Prepared |
+| Package-level Node engines | Omit because the published runtime is browser-based | Prepared |
+| Tag name | `v0.1.0` | Approved name only; tag does not exist yet |
+| Release notes | `docs/releases/v0.1.0.md` | Drafted |
+| Generated WASM | Keep source-tree wasm-bindgen output ignored; publish built `dist` assets only | Preserved |
+| FFmpeg boundary | Keep `@ffmpeg/core` absent | Preserved and explicitly checked |
 
 ## Current evidence
 
-- Pull request #1 is merged and closed at the verified baseline commit.
-- GitHub Actions run `29374482569` was the successful pre-merge PR integration run for the implementation that was subsequently squash-merged.
-- The run passed Rust formatting, linting and tests; the WASM build and Chromium smoke tests; TypeScript/package tests; the library and demo build; Chromium and WebKit E2E; package inspection; and the `@ffmpeg/core` absence check.
-- The package-consumer test creates an actual temporary npm tarball, confirms the package README and license are present, installs the tarball into a clean consumer, and verifies that the consumer build emits local worker and WASM assets.
-- `packages/convolve-wasm/package.json` remains version `0.1.0` with `"private": true`.
-- The manual desktop HE-AAC matrix is not complete and remains a release blocker.
-
-Automated evidence is not a substitute for the manual M4A matrix. See [browser and codec support](browser-support.md) for the local-container record, GitHub Actions record, and the uncompleted Chrome/Edge/Safari table.
-
-## Release decision record
-
-The following defaults are recommendations for the first public release. Each owner decision must be approved explicitly before the corresponding repository or registry action is taken.
-
-| Decision | Recommended v0.1.0 choice | Current state |
-|---|---|---|
-| Public version | Keep `0.1.0` as the first public version | Owner approval required |
-| Package visibility | Remove `private: true` only in the separate final release pull request | Intentionally unchanged in this draft |
-| npm access | Publish `@agunal/convolve-wasm` as a public scoped package | Owner approval required |
-| Access enforcement | Add `"publishConfig": { "access": "public" }` and preserve an explicit public-access publish gate | Owner approval required |
-| Provenance | Require verifiable registry provenance for the published artifact | Publishing workflow/auth method still to be approved |
-| Registry authentication | Use an owner-controlled, least-privilege publication path | Not configured or exercised in this draft |
-| Package description | `Browser-side stereo audio convolution powered by a Rust/WebAssembly DSP core.` | Owner approval required |
-| Repository metadata | Add the GitHub repository URL and package directory `packages/convolve-wasm` | Owner approval required |
-| Support metadata | Add GitHub issues as `bugs.url` and the repository README as `homepage` | Owner approval required |
-| Package-level Node engines | Omit in v0.1.0 because the published runtime is browser-based; retain the root Node requirement for development tooling | Owner approval required |
-| Tag name | `v0.1.0` | Owner approval required; do not create yet |
-| GitHub release | First-public-release notes tied to the approved tag | Not drafted or created yet |
-| Generated WASM | Keep `packages/convolve-wasm/src/wasm/` ignored; publish only built distribution assets | Confirmed project boundary |
-| FFmpeg boundary | Keep `@ffmpeg/core` absent | Confirmed project boundary |
-
-The recommended final manifest metadata is equivalent to:
-
-```json
-{
-  "description": "Browser-side stereo audio convolution powered by a Rust/WebAssembly DSP core.",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/agunal/convolve-wasm.git",
-    "directory": "packages/convolve-wasm"
-  },
-  "bugs": {
-    "url": "https://github.com/agunal/convolve-wasm/issues"
-  },
-  "homepage": "https://github.com/agunal/convolve-wasm#readme",
-  "publishConfig": {
-    "access": "public"
-  }
-}
-```
-
-Approval checklist:
-
-- [ ] Confirm that `0.1.0` is the intended first public version.
-- [ ] Confirm public npm access and `publishConfig.access` for the scoped package.
-- [ ] Approve the provenance and registry-authentication method.
-- [ ] Approve the package description, repository, bugs, homepage, and package-level engines decision.
-- [ ] Approve removal of `private: true` in the separate final release pull request.
-- [ ] Approve tag name `v0.1.0` and the release-note text.
-- [ ] Authorize tagging and npm publication only after every gate below passes.
+- Pull request #1 merged the implementation at `a088b5bf57aa3f256da79de86a0de2d21a265684`.
+- Pull request #6 merged the release-readiness documentation at `60e79cf38174fc0d90df47cbee5f21d274821a43`.
+- The implementation and readiness pull requests passed Rust formatting, Clippy, native tests, WASM builds, Chrome WASM smoke tests, TypeScript/package-consumer tests, library/demo builds, Chromium and WebKit E2E, package inspection, and the `@ffmpeg/core` absence gate.
+- The package-consumer test creates a real npm tarball, installs it in a clean consumer, and proves that local worker and standalone WASM assets bundle correctly.
+- The final release branch changes release metadata and control documentation only; it does not change DSP behavior or the public `CONVOLVE()` contract.
+- The desktop Chrome, Edge, and Safari HE-AAC matrix is still incomplete.
 
 ## Manual HE-AAC blocker
 
 Run the matrix in `docs/browser-support.md` with a known stereo 48 kHz HE-AAC `.m4a` and a WAV impulse on current desktop Chrome, Edge, and Safari.
 
-Release acceptance requires, for every browser:
+For every browser, record:
 
 - exact browser and operating-system versions;
-- exact M4A codec/profile identification and the named inspection tool used;
+- exact AAC profile or object type and the named inspection tool used;
 - passing plain convolution;
 - passing `beatPan: "a"` with reverse append;
 - successful playback and download of both outputs;
@@ -86,62 +53,71 @@ Release acceptance requires, for every browser:
 - finite, non-silent peak metadata;
 - no clipping and no page errors.
 
-Do not convert a blank row, a Playwright WebKit result, or an assumed native-codec capability into a manual pass.
+The current environment has neither the private HE-AAC fixture nor genuine desktop Chrome, Edge, and Safari coverage. The matrix therefore remains `Not run`. Do not merge the final release pull request until the table contains real evidence for all three browsers.
 
-## Final packed-tarball inspection
+## Trusted publishing setup
 
-The existing package-consumer test proves that an implementation tarball can be installed and bundled. The final release artifact still needs a recorded inspection after the approved manifest changes.
+The repository contains two manual workflows:
 
-Perform this inspection only after the separate final release pull request has merged. Use a fresh checkout of the exact resulting commit. Run `npm pack` once, retain that exact `.tgz`, and publish that same file after authorization. Do not rebuild or repack between inspection and publication.
+- `.github/workflows/release-candidate.yml` verifies the exact merged source commit, requires a complete browser matrix, runs the full clean-room test suite, packs once, inspects the `.tgz`, records `SHA256SUMS`, and uploads the exact artifact.
+- `.github/workflows/publish.yml` requires a successful candidate workflow run, the exact source commit, and the approved tarball SHA-256. It downloads that artifact, verifies the `v0.1.0` tag points to the exact commit, verifies the tarball again, and publishes that same `.tgz` without rebuilding or repacking.
 
-```bash
-source_commit=$(git rev-parse HEAD)
-test -z "$(git status --porcelain)"
+Before publication, configure npm trusted publishing with these exact values:
 
-release_pack_dir=${RELEASE_PACK_DIR:-"$(mktemp -d)"}
-mkdir -p "$release_pack_dir"
-test -z "$(find "$release_pack_dir" -mindepth 1 -maxdepth 1 -print -quit)"
-printf 'Source commit: %s\n' "$source_commit"
-printf 'Release artifact directory: %s\n' "$release_pack_dir"
-
-npm ci
-npm run build:wasm
-npm run build -w @agunal/convolve-wasm
-npm pack --json --pack-destination "$release_pack_dir" -w @agunal/convolve-wasm \
-  > "$release_pack_dir/pack.json"
-
-tarball=$(find "$release_pack_dir" -maxdepth 1 -type f -name '*.tgz' -print -quit)
-test -n "$tarball"
-
-cat "$release_pack_dir/pack.json"
-tar -tzf "$tarball" | LC_ALL=C sort
-sha256sum "$tarball" | tee "$release_pack_dir/SHA256SUMS"
-
-mkdir "$release_pack_dir/unpacked"
-tar -xzf "$tarball" -C "$release_pack_dir/unpacked"
-
-if grep -R -n -F '@ffmpeg/core' "$release_pack_dir/unpacked/package"; then
-  echo "@ffmpeg/core found in packed artifact" >&2
-  exit 1
-fi
-
-set +e
-ffmpeg_tree=$(npm ls @ffmpeg/core 2>&1)
-ffmpeg_status=$?
-set -e
-printf '%s\n' "$ffmpeg_tree"
-if [ "$ffmpeg_status" -eq 0 ] || grep -q '@ffmpeg/core@' <<<"$ffmpeg_tree"; then
-  echo "@ffmpeg/core must be absent from the dependency tree" >&2
-  exit 1
-fi
+```text
+Provider:           GitHub Actions
+Organization/user:  agunal
+Repository:         convolve-wasm
+Workflow filename:  publish.yml
+Environment:        npm
+Allowed action:     npm publish
 ```
 
-Do not delete or overwrite `release_pack_dir` after inspection. Preserve it until the artifact is either published or the release is explicitly abandoned. In automation, upload the `.tgz`, `pack.json`, and `SHA256SUMS` before the workspace is cleaned up.
+Also configure a protected GitHub environment named `npm` with an owner-controlled approval gate.
 
-Record all of the following in the release approval record:
+The publish workflow uses a GitHub-hosted runner, Node 24, npm 11.5.1, `id-token: write`, and an exact repository URL in `package.json`. No `NODE_AUTH_TOKEN` or long-lived npm publish secret is used.
+
+Before final authorization, verify that npm permits the trusted-publisher configuration for `@agunal/convolve-wasm`. If registry setup cannot be completed before the first publication, stop. Do not silently fall back to a token. Any one-time bootstrap publication path requires a separate owner decision and a new review of credentials, provenance, artifact identity, and cleanup.
+
+## Final release pull request gate
+
+The draft final release pull request may contain:
+
+- removal of `private: true`;
+- approved package metadata and `publishConfig`;
+- release notes;
+- the candidate and publish workflows;
+- the completed manual browser evidence.
+
+It must not merge while any of these are true:
+
+- a Chrome, Edge, or Safari matrix row remains blank or `Not run`;
+- current-head CI is not green;
+- npm trusted-publisher and GitHub environment setup have not been verified;
+- the diff contains DSP, worker, public API, generated WASM, private audio, or unrelated changes;
+- the owner has not explicitly approved merging the final release candidate.
+
+## Exact-artifact candidate workflow
+
+After the final release pull request merges, run **Build Release Candidate** with the exact resulting commit SHA.
+
+The workflow must:
+
+1. check out that exact commit;
+2. verify a clean tree and completed manual browser matrix;
+3. validate the publishable manifest;
+4. run Rust format, Clippy, native tests, WASM build, TypeScript/package-consumer tests, library/demo build, Chrome WASM tests, and Chromium/WebKit E2E;
+5. run `npm pack` exactly once;
+6. inspect packed filenames and extracted contents;
+7. prove `@ffmpeg/core` is absent from both the dependency tree and artifact;
+8. create `pack.json`, `CONTENTS.txt`, `RELEASE-METADATA.txt`, and `SHA256SUMS`;
+9. upload the exact `.tgz` and evidence as the `npm-release-candidate` artifact.
+
+Record:
 
 ```text
 source commit:
+candidate workflow run ID:
 tarball filename:
 package name/version:
 packed size:
@@ -152,69 +128,34 @@ inspector:
 inspection date:
 ```
 
-Acceptance criteria:
+## Final authorization gate
 
-- the source commit is the exact commit produced by merging the separate final release pull request;
-- package name, version, access policy, provenance policy, and approved metadata match the release decisions;
-- `private: true` is absent from the final publishable manifest;
-- `package.json`, `README.md`, `LICENSE`, the root JavaScript entry, declarations, the module-worker asset, and the standalone WASM asset are present;
-- source files, tests, demo files, repository-only documentation, private audio, and bootstrap transport artifacts are absent;
-- `packages/convolve-wasm/src/wasm/` remains untracked in the repository;
-- the packed tarball still passes the clean package-consumer build;
-- `@ffmpeg/core` is absent from both the dependency tree and the extracted packed contents;
-- the recorded SHA-256 corresponds to the exact `.tgz` approved and later supplied to the publish command.
+After the candidate artifact exists, obtain a separate explicit authorization that names:
 
-If release automation uses separate verification and publication jobs, the verification job must upload this exact `.tgz` and its `SHA256SUMS`. The publication job must download both, verify the recorded hash, and publish the tarball without running `npm pack` again.
+- exact source commit;
+- candidate workflow run ID;
+- tarball filename;
+- exact lowercase SHA-256;
+- approved tag `v0.1.0`;
+- approval to publish to npm;
+- approval or refusal to create the GitHub release.
 
-## Clean-room release verification
+No earlier `DO`, merge approval, release-decision approval, or general instruction substitutes for this artifact-specific authorization.
 
-Run these gates from a fresh checkout of the exact commit produced by merging the separate final release pull request:
+## Tag and publication sequence
 
-```bash
-git status --short
-git rev-parse HEAD
-node --version
-npm --version
-rustc --version
-cargo --version
-wasm-pack --version
+1. Complete and record the Chrome, Edge, and Safari HE-AAC matrix.
+2. Verify the draft final release pull request and current-head CI.
+3. Verify npm trusted publishing and the protected `npm` GitHub environment.
+4. Obtain explicit approval to merge the final release pull request.
+5. Merge it through the approved method.
+6. Run **Build Release Candidate** against the exact resulting commit.
+7. Review the uploaded `.tgz`, contents, metadata, and SHA-256.
+8. Obtain artifact-specific final authorization.
+9. Create `v0.1.0` on that exact commit.
+10. Run **Publish Inspected npm Artifact** with the exact commit, candidate run ID, and SHA-256.
+11. Confirm npm shows version `0.1.0` and provenance.
+12. Create the GitHub release only if separately authorized.
+13. Stop immediately if the commit, tag, workflow run, tarball, SHA-256, browser matrix, or registry configuration does not match.
 
-npm ci
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-npm run build:wasm
-npm run test:ts
-npm run build
-npx playwright install --with-deps chromium webkit
-wasm-pack test --headless --chrome crates/convolve-core
-npm run test:e2e
-npm pack -w @agunal/convolve-wasm --dry-run
-npm ls @ffmpeg/core
-git diff --check
-git status --short
-```
-
-Expected outcome:
-
-- every validation command succeeds, except that the intentional `npm ls @ffmpeg/core` absence may produce a nonzero exit status;
-- the working tree is clean after generated ignored artifacts are removed or ignored as designed;
-- the actual tarball inspection above is complete and recorded;
-- no private audio, generated source-tree WASM, or transport artifact is committed.
-
-## Release sequence and stop points
-
-1. Review and merge this documentation-only readiness pull request while `private: true` remains unchanged.
-2. Complete and record the manual HE-AAC matrix.
-3. Obtain explicit owner approval for version, npm access, manifest metadata, provenance/authentication, visibility, tag name, and release notes.
-4. Open a separate final release pull request containing the approved browser evidence, manifest changes, and release notes; do not tag or publish from that pull request branch.
-5. Run its full CI and review the complete release diff.
-6. Merge the final release pull request through the approved merge method.
-7. Check out the exact resulting commit in a fresh environment and run the clean-room gates.
-8. Pack once from that exact commit, inspect the `.tgz`, record its complete metadata and SHA-256, and preserve that exact file.
-9. Obtain a separate explicit authorization naming the source commit and tarball SHA-256.
-10. Tag that exact source commit and publish the already inspected `.tgz` through the approved provenance/authentication path without rebuilding or repacking.
-11. Create the GitHub release only if separately authorized.
-12. Stop immediately if the source commit, tarball hash, manual matrix, approved decisions, or downloaded release artifact no longer match.
-
-Until steps 1 through 11 are satisfied, the repository is release-prepared but not release-authorized.
+Until all applicable steps complete, the repository is release-prepared but not release-authorized.
