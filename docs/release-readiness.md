@@ -1,6 +1,6 @@
 # v0.1.0 final release readiness
 
-**Status:** Draft final release candidate. Package metadata and the real-browser HE-AAC evidence are prepared on `release/v0.1.0-final`. Merge requires final diff review and explicit owner authorization. Tagging, GitHub release creation, and npm publication remain separately prohibited until the exact-artifact and first-publication controls below are satisfied.
+**Status:** Final release candidate prepared for merge review. Package metadata and the real-browser HE-AAC evidence are prepared on `release/v0.1.0-final`. Merge requires final diff review and explicit owner authorization. Tagging, GitHub release creation, and npm publication remain separately prohibited until the exact-artifact and first-publication controls below are satisfied.
 
 **Merged readiness baseline:** `main` at `60e79cf38174fc0d90df47cbee5f21d274821a43`.
 
@@ -61,7 +61,7 @@ Evidence: GitHub Actions run `29392630499`, where `fixture`, `windows-matrix`, a
 
 ### Remaining merge gates
 
-- [ ] Review and approve the complete final release pull-request diff.
+- [x] Review and approve the complete final release pull-request diff.
 - [ ] Obtain explicit owner authorization before merging the final release pull request.
 
 The GitHub environment and npm credential are post-merge, pre-publication controls. They do not need to exist merely to merge code because the publish workflow is manual, requires a release tag, exact commit, exact candidate run, exact tarball hash, an explicit bootstrap acknowledgement, and an environment-scoped secret.
