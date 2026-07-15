@@ -135,7 +135,9 @@ jobs:
           set +e
           {
             set -x
-            python3 -m pip install --user selenium
+            python3 -m venv .venv-release-browser
+            . .venv-release-browser/bin/activate
+            python -m pip install selenium
             pip_status=$?
             sudo /usr/bin/safaridriver --enable
             driver_status=$?
@@ -149,6 +151,7 @@ jobs:
           status=$?
           set -e
           cat release-browser-results/macos/safari-config.log
+          echo "SAFARI_PYTHON=$PWD/.venv-release-browser/bin/python" >> "$GITHUB_ENV"
           exit "$status"
       - name: Start capture server
         shell: bash
@@ -175,7 +178,7 @@ jobs:
           BASE_URL: http://127.0.0.1:4173
         run: |
           set +e
-          python3 tests/release-browser/safari_matrix.py \
+          "$SAFARI_PYTHON" tests/release-browser/safari_matrix.py \
             > release-browser-results/macos/harness.log 2>&1
           status=$?
           set -e
