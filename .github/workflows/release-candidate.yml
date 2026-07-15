@@ -75,10 +75,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -E '^\| (Chrome|Edge|Safari) \|.*\| Not run \|$' docs/browser-support.md; then
-            echo 'Manual HE-AAC matrix is incomplete' >&2
-            exit 1
-          fi
+          for browser in Chrome Edge Safari; do
+            mapfile -t rows < <(grep -E "^\\| $browser \\|" docs/browser-support.md)
+            if [ "${#rows[@]}" -ne 1 ]; then
+              echo "Expected exactly one $browser matrix row" >&2
+              exit 1
+            fi
+            row="${rows[0]}"
+            if grep -q '—' <<<"$row"; then
+              echo "$browser matrix row still contains blank fields: $row" >&2
+              exit 1
+            fi
+            if ! grep -Eq '\| Pass \|$' <<<"$row"; then
+              echo "$browser matrix row is not a recorded pass: $row" >&2
+              exit 1
+            fi
+          done
 
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
