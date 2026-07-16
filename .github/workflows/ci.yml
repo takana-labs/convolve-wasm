@@ -66,6 +66,9 @@ jobs:
       - name: Build library and demo
         run: npm run build
 
+      - name: Validate JSR package
+        run: npm run validate:jsr
+
       - name: Build and validate GitHub Pages artifact
         run: npm run build:pages && npm run validate:pages
 
@@ -90,7 +93,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Inspect package contents
-        run: npm pack -w @agunal/convolve-wasm --dry-run
+        run: npm pack -w @takana-labs/convolve-wasm --dry-run
 
       - name: Verify prebuilt FFmpeg core is absent
         shell: bash
