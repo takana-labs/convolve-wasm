@@ -39,6 +39,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
+      - name: Validate project identity
+        run: npm run validate:identity
+
       - name: Validate documentation image assets
         run: npm run validate:docs
 
