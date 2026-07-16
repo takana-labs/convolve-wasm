@@ -44,6 +44,14 @@ describe("packed package consumer", () => {
       );
 
       try {
+        const packageEntrypoint = readFileSync(
+          join(repositoryRoot, "packages/convolve-wasm/dist/index.js"),
+          "utf8",
+        );
+        expect(packageEntrypoint).toMatch(
+          /^\/\/ @ts-self-types="\.\/index\.d\.ts"/,
+        );
+
         const packDirectory = join(temporaryRoot, "pack");
         mkdirSync(packDirectory);
         const packed = JSON.parse(
