@@ -70,14 +70,14 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npm run validate:jsr 2>&1 | tee jsr-dry-run.log
+          npm run validate:jsr 2>&1 | tee "$RUNNER_TEMP/jsr-dry-run.log"
 
       - name: Upload JSR dry-run diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: jsr-dry-run-diagnostics
-          path: jsr-dry-run.log
+          path: ${{ runner.temp }}/jsr-dry-run.log
           if-no-files-found: error
 
       - name: Build and validate GitHub Pages artifact
