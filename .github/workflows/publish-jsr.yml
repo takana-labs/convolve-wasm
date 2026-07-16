@@ -1,0 +1,134 @@
+name: Publish Inspected JSR Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact tagged source commit
+        required: true
+        type: string
+      artifact_run_id:
+        description: Successful Build JSR Release Candidate run ID
+        required: true
+        type: string
+      artifact_sha256:
+        description: Approved lowercase SHA-256 of the inspected archive
+        required: true
+        type: string
+      publish_acknowledgement:
+        description: Type PUBLISH @takana-labs/convolve-wasm@0.1.0 TO JSR
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: jsr
+
+    steps:
+      - name: Validate approval inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${{ inputs.source_commit }}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${{ inputs.artifact_run_id }}" =~ ^[0-9]+$ ]]
+          [[ "${{ inputs.artifact_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
+          test "${{ inputs.publish_acknowledgement }}" = \
+            'PUBLISH @takana-labs/convolve-wasm@0.1.0 TO JSR'
+
+      - name: Check out exact source commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+
+      - name: Verify source commit and release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          test "$actual" = "${{ inputs.source_commit }}"
+          git fetch --force origin refs/tags/v0.1.0:refs/tags/v0.1.0
+          test "$(git rev-list -n 1 v0.1.0)" = "$actual"
+          test -z "$(git status --porcelain)"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Verify candidate workflow run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_RUN_ID: ${{ inputs.artifact_run_id }}
+        run: |
+          set -euo pipefail
+          run_json=$(gh run view "$ARTIFACT_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --json name,conclusion,event,headSha)
+          printf '%s\n' "$run_json"
+          test "$(jq -r .name <<<"$run_json")" = 'Build JSR Release Candidate'
+          test "$(jq -r .conclusion <<<"$run_json")" = 'success'
+          test "$(jq -r .event <<<"$run_json")" = 'workflow_dispatch'
+          test "$(jq -r .headSha <<<"$run_json")" = "${{ inputs.source_commit }}"
+
+      - name: Download inspected artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_RUN_ID: ${{ inputs.artifact_run_id }}
+        run: |
+          set -euo pipefail
+          gh run download "$ARTIFACT_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name jsr-release-candidate --dir release-artifact
+
+      - name: Verify artifact identity and contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=release-artifact/convolve-wasm-jsr-0.1.0.tgz
+          test -f "$archive"
+          (cd release-artifact && sha256sum --check SHA256SUMS)
+          actual_hash=$(sha256sum "$archive" | awk '{print $1}')
+          test "$actual_hash" = "${{ inputs.artifact_sha256 }}"
+          grep -Fx "source_commit=${{ inputs.source_commit }}" \
+            release-artifact/RELEASE-METADATA.txt
+          grep -Fx 'package=@takana-labs/convolve-wasm@0.1.0' \
+            release-artifact/RELEASE-METADATA.txt
+
+          rm -rf release-package
+          mkdir release-package
+          tar -xzf "$archive" -C release-package
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const jsr = JSON.parse(fs.readFileSync('release-package/package/jsr.json', 'utf8'));
+          const pkg = JSON.parse(fs.readFileSync('release-package/package/package.json', 'utf8'));
+          const failures = [];
+          if (jsr.name !== '@takana-labs/convolve-wasm') failures.push('unexpected JSR package name');
+          if (jsr.version !== '0.1.0') failures.push('unexpected JSR package version');
+          if (jsr.exports !== './dist/index.js') failures.push('unexpected JSR export');
+          if (pkg.name !== '@takana-labs/convolve-wasm') failures.push('unexpected package name');
+          if (pkg.version !== '0.1.0') failures.push('unexpected package version');
+          if (pkg.repository?.url !== 'git+https://github.com/takana-labs/convolve-wasm.git') failures.push('repository mismatch');
+          if (failures.length) throw new Error(failures.join('\n'));
+          NODE
+
+          if grep -R -n -F '@ffmpeg/core' release-package/package; then
+            echo '@ffmpeg/core found in approved artifact' >&2
+            exit 1
+          fi
+
+      - name: Revalidate and publish approved package with JSR OIDC
+        working-directory: release-package/package
+        run: |
+          set -euo pipefail
+          npx --yes jsr@0.14.3 publish --dry-run
+          npx --yes jsr@0.14.3 publish
