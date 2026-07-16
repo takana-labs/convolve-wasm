@@ -1,0 +1,339 @@
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ui-icon {
+  display: block;
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hero-specs span,
+.field-label,
+.control-label,
+.check-title,
+.about-card h3,
+#run,
+.download,
+.footer-links a {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.hero-specs .ui-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--signal-warm);
+}
+
+.field-label,
+.control-label,
+.check-title {
+  min-width: 0;
+  color: #b7c0c2;
+}
+
+.field-label .ui-icon,
+.control-label .ui-icon,
+.check-title .ui-icon,
+.about-card h3 .ui-icon {
+  color: #87969a;
+}
+
+.check-title {
+  font-weight: 780;
+}
+
+#run,
+.download {
+  justify-content: center;
+}
+
+#run .ui-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.download .ui-icon {
+  color: #9eabad;
+}
+
+.about-card h3 {
+  align-items: flex-start;
+}
+
+.about-card h3 .ui-icon {
+  margin-top: 0.08rem;
+}
+
+.site-footer {
+  position: relative;
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid rgb(168 182 187 / 15%);
+  border-radius: 22px;
+  padding: clamp(24px, 4vw, 34px);
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 4.5%), transparent 26%),
+    linear-gradient(325deg, rgb(0 0 0 / 31%), transparent 55%),
+    repeating-linear-gradient(
+      118deg,
+      rgb(255 255 255 / 1.2%) 0 1px,
+      transparent 1px 9px
+    ),
+    #12181b;
+  color: var(--ink-muted);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-size: 0.86rem;
+  letter-spacing: normal;
+  line-height: 1.65;
+  text-align: left;
+  box-shadow:
+    inset 1px 1px 0 rgb(255 255 255 / 6%),
+    inset -5px -6px 16px rgb(0 0 0 / 28%),
+    0 20px 44px rgb(0 0 0 / 30%);
+}
+
+.site-footer::before {
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgb(0 0 0 / 34%);
+  border-radius: 15px;
+  pointer-events: none;
+  content: "";
+}
+
+.site-footer p {
+  margin-top: 0;
+}
+
+.footer-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.35fr)
+    minmax(190px, 0.85fr)
+    minmax(210px, 0.8fr);
+  gap: clamp(24px, 5vw, 52px);
+  align-items: start;
+}
+
+.footer-brand,
+.footer-links,
+.footer-owner {
+  min-width: 0;
+}
+
+.footer-kicker,
+.footer-heading {
+  margin-bottom: 11px;
+  color: var(--signal-warm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-shadow: 0 1px 0 #000;
+  text-transform: uppercase;
+}
+
+.footer-brand h2 {
+  margin: 0 0 10px;
+  color: #d3d9da;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.65rem, 3vw, 2.15rem);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+
+.footer-brand > p:not(.footer-kicker):not(.footer-trust) {
+  max-width: 43ch;
+  margin-bottom: 16px;
+  color: #899599;
+}
+
+.footer-trust {
+  display: inline-flex;
+  max-width: 100%;
+  margin-bottom: 0;
+  border: 1px solid rgb(157 172 178 / 11%);
+  border-radius: 999px;
+  padding: 8px 11px;
+  background: #0d1316;
+  color: #869397;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  box-shadow:
+    inset 2px 3px 7px rgb(0 0 0 / 48%),
+    inset -1px -1px 2px rgb(255 255 255 / 3%);
+}
+
+.footer-links {
+  display: grid;
+  gap: 8px;
+}
+
+.footer-links .footer-heading {
+  margin-bottom: 3px;
+}
+
+.footer-links a {
+  position: relative;
+  min-height: 44px;
+  max-width: 100%;
+  justify-content: flex-start;
+  border: 1px solid rgb(157 172 178 / 11%);
+  border-radius: 11px;
+  padding: 10px 12px;
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 4%), transparent 36%),
+    #192126;
+  color: #aab5b8;
+  font-size: 0.8rem;
+  font-weight: 760;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+  box-shadow:
+    inset 1px 1px 0 rgb(255 255 255 / 4%),
+    2px 4px 9px rgb(0 0 0 / 24%);
+}
+
+.footer-links a::after {
+  margin-left: auto;
+  color: #5f6c71;
+  content: "↗";
+  font-weight: 500;
+}
+
+.footer-links a:hover {
+  border-color: rgb(193 204 208 / 23%);
+  color: #e1e6e7;
+}
+
+.footer-links a:hover .ui-icon {
+  color: var(--signal-warm);
+}
+
+.footer-owner .footer-heading {
+  margin-bottom: 14px;
+}
+
+.owner-row {
+  display: flex;
+  min-width: 0;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgb(153 168 174 / 10%);
+  border-radius: 14px;
+  padding: 7px 7px 7px 14px;
+  background: #0f1518;
+  color: #879397;
+  box-shadow:
+    inset 3px 4px 9px rgb(0 0 0 / 42%),
+    inset -1px -1px 2px rgb(255 255 255 / 3%);
+}
+
+.owner-name {
+  color: #c9d0d2;
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.bluesky-link {
+  display: grid;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid rgb(156 186 209 / 20%);
+  border-radius: 50%;
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 8%), transparent 35%),
+    #23313a;
+  color: #9ec5e2;
+  text-decoration: none;
+  box-shadow:
+    inset 1px 1px 0 rgb(255 255 255 / 8%),
+    3px 5px 11px rgb(0 0 0 / 31%);
+}
+
+.bluesky-link .ui-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.bluesky-link:hover {
+  border-color: rgb(174 208 234 / 36%);
+  color: #c0ddf1;
+}
+
+.footer-meta {
+  position: relative;
+  z-index: 1;
+  margin-top: 22px;
+  border-top: 1px solid rgb(159 173 178 / 10%);
+  padding-top: 15px;
+  color: #67757a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 900px) {
+  .footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .footer-brand {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .footer-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .footer-brand {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .site-footer {
+    border-radius: 18px;
+    padding: 20px;
+  }
+
+  .footer-trust {
+    border-radius: 12px;
+    white-space: normal;
+  }
+
+  .footer-links a {
+    width: 100%;
+  }
+
+  .owner-row {
+    align-items: flex-start;
+  }
+}
