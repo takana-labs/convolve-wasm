@@ -67,7 +67,18 @@ jobs:
         run: npm run build
 
       - name: Validate JSR package
-        run: npm run validate:jsr
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run validate:jsr 2>&1 | tee jsr-dry-run.log
+
+      - name: Upload JSR dry-run diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jsr-dry-run-diagnostics
+          path: jsr-dry-run.log
+          if-no-files-found: error
 
       - name: Build and validate GitHub Pages artifact
         run: npm run build:pages && npm run validate:pages
