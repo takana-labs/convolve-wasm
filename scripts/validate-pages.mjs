@@ -58,7 +58,7 @@ if (html.includes("/src/")) {
 
 for (const match of html.matchAll(/(?:src|href)="([^"]+)"/gu)) {
   const reference = match[1];
-  if (reference?.startsWith("/") && !reference.startsWith("/convolve-wasm/")) {
+  if (!reference?.startsWith("/") || reference.startsWith("/convolve-wasm/")) {
     throw new Error(`Pages HTML contains a domain-root asset reference: ${reference}`);
   }
 }
