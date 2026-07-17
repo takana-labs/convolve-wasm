@@ -39,6 +39,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
+      - name: Validate project identity
+        run: npm run validate:identity
+
       - name: Validate documentation image assets
         run: npm run validate:docs
 
@@ -62,6 +65,20 @@ jobs:
 
       - name: Build library and demo
         run: npm run build
+
+      - name: Validate JSR package
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run validate:jsr 2>&1 | tee "$RUNNER_TEMP/jsr-dry-run.log"
+
+      - name: Upload JSR dry-run diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jsr-dry-run-diagnostics
+          path: ${{ runner.temp }}/jsr-dry-run.log
+          if-no-files-found: warn
 
       - name: Build and validate GitHub Pages artifact
         run: npm run build:pages && npm run validate:pages
@@ -87,7 +104,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Inspect package contents
-        run: npm pack -w @agunal/convolve-wasm --dry-run
+        run: npm pack -w @takana-labs/convolve-wasm --dry-run
 
       - name: Verify prebuilt FFmpeg core is absent
         shell: bash

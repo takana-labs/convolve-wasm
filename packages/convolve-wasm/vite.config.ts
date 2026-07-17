@@ -58,6 +58,14 @@ export default defineConfig({
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`,
     },
+    rollupOptions: {
+      output: {
+        banner: (chunk) =>
+          chunk.name === "index"
+            ? '// @ts-self-types="./index.d.ts"'
+            : "",
+      },
+    },
     assetsInlineLimit: 0,
     sourcemap: true,
   },

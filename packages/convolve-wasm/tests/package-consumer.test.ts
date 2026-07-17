@@ -44,6 +44,14 @@ describe("packed package consumer", () => {
       );
 
       try {
+        const packageEntrypoint = readFileSync(
+          join(repositoryRoot, "packages/convolve-wasm/dist/index.js"),
+          "utf8",
+        );
+        expect(packageEntrypoint).toMatch(
+          /^\/\/ @ts-self-types="\.\/index\.d\.ts"/,
+        );
+
         const packDirectory = join(temporaryRoot, "pack");
         mkdirSync(packDirectory);
         const packed = JSON.parse(
@@ -55,7 +63,7 @@ describe("packed package consumer", () => {
               "--pack-destination",
               packDirectory,
               "-w",
-              "@agunal/convolve-wasm",
+              "@takana-labs/convolve-wasm",
             ],
             repositoryRoot,
           ),
@@ -74,7 +82,7 @@ describe("packed package consumer", () => {
               type: "module",
               scripts: { build: "vite build" },
               dependencies: {
-                "@agunal/convolve-wasm": `file:${tarball}`,
+                "@takana-labs/convolve-wasm": `file:${tarball}`,
               },
               devDependencies: { vite: "8.1.4" },
             },
@@ -89,7 +97,7 @@ describe("packed package consumer", () => {
         writeFileSync(
           join(consumer, "src/main.ts"),
           [
-            'import { CONVOLVE } from "@agunal/convolve-wasm";',
+            'import { CONVOLVE } from "@takana-labs/convolve-wasm";',
             "globalThis.__convolve = CONVOLVE;",
             "export {};",
             "",
