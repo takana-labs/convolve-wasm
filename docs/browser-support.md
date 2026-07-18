@@ -2,22 +2,16 @@
 
 ## Supported boundary
 
-The established release target is current desktop Chrome/Edge and Safari. v0.1.1 is a mobile-safety candidate for current Android Chrome: it adds device-aware rejection before worker creation so risky jobs produce a readable `INPUT_TOO_LARGE` message instead of intentionally entering the worker/WASM allocation path.
+Current desktop Chrome/Edge and Safari remain the established release target. v0.1.2 is a candidate for current Android Chrome: it retains v0.1.1 safe rejection and delivers the lower-memory full FFT, including incremental beat panning, virtual reverse layering, explicit FFT scratch reuse, and backpressured PCM24 chunk streaming.
 
-This release does not yet claim that large renders complete on Android. Reduced-memory full FFT is planned for v0.1.2 and bounded-memory convolution for v0.2.0. Official Android completion support remains gated on those releases and a documented physical 4 GB Android test. iOS is best effort.
-
-The v0.1.1 private-pair planning and test record is in [the mobile safe-rejection evidence](testing/2026-07-17-mobile-safe-rejection.md).
+This is not yet an official Android-completion claim. Both the immutable [v0.1.1 safe-rejection evidence](testing/2026-07-17-mobile-safe-rejection.md) and the [v0.1.2 lower-memory evidence](testing/2026-07-18-lower-memory-full-fft.md) require a physical-device `Pass` before release candidate packaging or publication can proceed. On a reported 4 GB device, the private pair remains expected to produce readable pre-worker `INPUT_TOO_LARGE` results because its corrected v0.1.2 estimates exceed the 192 MiB browser budget. A public multi-chunk fixture must complete with playback/download and a clean console. iOS remains best effort.
 
 - WAV is the automated portability baseline.
 - M4A is passed to `decodeAudioData()` and depends on codecs exposed by the browser and operating system.
 - Firefox M4A behavior is best effort and platform dependent.
 - A decode failure returns `DECODE_FAILED`; there is no upload, server fallback, or bundled FFmpeg decoder.
 - Processing is single-threaded WASM in a dedicated worker and does not require `SharedArrayBuffer`, COOP, or COEP headers.
-
-The real-world input that shaped the decoder decision was identified during planning as stereo, 48 kHz HE-AAC in an M4A container. A pure Rust AAC-LC-only decoder would not reliably cover that profile, so v0.1.0 uses the native browser media stack.
-- Browser budgets range from 64 MiB to 384 MiB and use the reported `navigator.deviceMemory` class when available.
-- The independent 256 MiB Rust/WASM allocation guard remains active.
-
+- Browser budgets range from 64 MiB to 384 MiB using the reported `navigator.deviceMemory` class; the independent 256 MiB Rust/WASM guard remains active.
 ## Automated WAV validation
 
 Local-container evidence and GitHub Actions evidence are recorded separately. Browser availability in one environment does not describe what ran in another.

@@ -1,3 +1,36 @@
+# v0.1.2 release readiness
+
+**Status:** Draft candidate. Do not tag, create a GitHub Release, or publish until explicit authorization and two physical Android evidence records both say `Pass`.
+
+## Approved v0.1.2 identity
+
+| Surface | Value |
+|---|---|
+| JSR package | `@takana-labs/convolve-wasm@0.1.2` |
+| Release tag | `v0.1.2` |
+| Candidate archive | `convolve-wasm-jsr-0.1.2.tgz` |
+| Publication acknowledgement | `PUBLISH @takana-labs/convolve-wasm@0.1.2 TO JSR` |
+| Generated WASM | Ignored in source; included only in built `dist` |
+| Android state | Candidate only; official Android support blocked |
+
+v0.1.2 preserves the public API and full-engine WAV bytes while replacing avoidable full-engine allocations with incremental panning, virtual reverse/layered normalization, exact-length convolution buffers, reused FFT scratch, and 68-byte-header PCM24 pull streaming.
+
+## Fail-closed physical Android gate
+
+Both workflows execute `node scripts/verify-android-release-gate.mjs`. It requires exactly one `**Physical Android status:** Pass` line in each record:
+
+- [v0.1.1 mobile safe-rejection evidence](testing/2026-07-17-mobile-safe-rejection.md)
+- [v0.1.2 lower-memory full-FFT evidence](testing/2026-07-18-lower-memory-full-fft.md)
+
+`Not run`, `Failed`, missing, duplicated, or malformed status blocks candidate packaging, tag validation, and publication. The records currently remain `Not run`; publication is intentionally blocked. The v0.1.2 physical record requires a reported 4 GB Android Chrome device, the hash-only private pair safe-rejection results, and a successful public multi-chunk playback/download run with a surviving page and clean console.
+
+## Candidate and publication checks
+
+The candidate workflow validates Node 24, Rust/WASM, package/demo, generated-WASM Chrome, Chromium/WebKit, Pages, docs/identity/links, JSR dry run, and exact staged package contents. It archives the built package as `convolve-wasm-jsr-0.1.2.tgz` with a checksum and source/package metadata.
+
+The publication workflow accepts only the exact tagged source commit and inspected candidate run/artifact, revalidates the evidence gate and package identity, requires the explicit v0.1.2 acknowledgement, and publishes the already-inspected directory through JSR OIDC. Tests use only dry-run/package inspection paths and never publish.
+
+## Historical v0.1.0 migration notes
 # v0.1.0 final release readiness
 
 **Status:** Migration candidate only. Do not merge before the repository is transferred to `takana-labs/convolve-wasm` and the GitHub app is authorized for the organization. Do not tag, create a GitHub Release, or publish until exact-artifact authorization is given.

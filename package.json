@@ -32,7 +32,7 @@
     "test:ts": "npm run build:wasm && npm run build -w @takana-labs/convolve-wasm && npm run test -w @takana-labs/convolve-wasm && npm run test -w @takana-labs/convolve-demo",
     "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
     "test:pages": "playwright test -c tests/pages/playwright.config.ts",
-    "test:site": "node --test tests/site-config.test.mjs tests/site-url-sync.test.mjs tests/pages-artifact.test.mjs tests/pages-failure-modes.test.mjs tests/npm-command.test.mjs tests/pages-preflight.test.mjs tests/public-site-smoke.test.mjs tests/pages-workflows.test.mjs tests/lifecycle-contract.test.mjs tests/release-011.test.mjs",
+    "test:site": "node --test tests/site-config.test.mjs tests/site-url-sync.test.mjs tests/pages-artifact.test.mjs tests/pages-failure-modes.test.mjs tests/npm-command.test.mjs tests/pages-preflight.test.mjs tests/public-site-smoke.test.mjs tests/pages-workflows.test.mjs tests/lifecycle-contract.test.mjs tests/release-012.test.mjs tests/android-release-gate.test.mjs",
     "test": "npm run test:rust && npm run test:ts",
     "check": "npm run check:site-url && npm run test:site && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && npm run validate:toolchain && npm run validate:docs && npm run validate:identity && npm run validate:links && npm run test && npm run build && npm run validate:jsr",
     "validate:jsr": "cd packages/convolve-wasm && npx --yes jsr@0.14.3 publish --dry-run"

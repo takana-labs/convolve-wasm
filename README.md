@@ -55,7 +55,7 @@ The pipeline is fixed:
 
 1. Decode and resample A and B to planar stereo at 48 kHz.
 2. Estimate cross-layer browser peak memory and reject unsafe work before creating a worker.
-3. Retain the independent Rust/WASM allocation guard at exactly 256 MiB.
+3. Retain the independent Rust/WASM allocation guard at exactly 256 MiB; stream the 68-byte-header PCM24 output through one pull-based 65,536-frame chunk at a time.
 4. Perform full, wet-only, channel-wise linear convolution.
 5. Optionally detect beats from original A or B and extend the grid through the convolution tail.
 6. Optionally collapse the convolved signal to mono and pan it left/right with equal-power gains on alternating beats.
