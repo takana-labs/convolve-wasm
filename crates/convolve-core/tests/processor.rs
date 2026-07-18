@@ -1,6 +1,7 @@
 use convolve_core::{
     BeatPanSource, ConvolveCoreError, MAX_BYTES, ProcessOptions, ProcessStage, SAMPLE_RATE,
-    StereoAudio, convolution_frames, estimate_peak_bytes, process, process_with_progress,
+    StereoAudio, convolution_frames, estimate_peak_bytes, process, process_session_with_progress,
+    process_with_progress,
 };
 
 #[test]
@@ -272,6 +273,38 @@ fn processor_reports_only_the_stages_it_executes_in_order() {
             ProcessStage::Normalize,
             ProcessStage::Encode,
             ProcessStage::Done,
+        ]
+    );
+}
+
+#[test]
+fn streaming_session_chunks_reassemble_to_legacy_wav_without_encode_progress() {
+    let a = StereoAudio::new(SAMPLE_RATE, vec![1.0, 0.25, -0.5], vec![-0.25, 0.5, 1.0]).unwrap();
+    let b = impulse();
+    let mut stages = Vec::new();
+    let session = process_session_with_progress(&a, &b, true, ProcessOptions::default(), |stage| {
+        stages.push(stage)
+    })
+    .unwrap();
+    let mut streamed = session.wav_header().unwrap().to_vec();
+    let frames = session.metadata().output_frames;
+    for offset in (0..frames).step_by(2) {
+        streamed.extend(
+            session
+                .pcm24_chunk(offset, (frames - offset).min(2))
+                .unwrap(),
+        );
+    }
+    let legacy = process(&a, &b, true, ProcessOptions::default()).unwrap();
+    assert_eq!(streamed, legacy.wav_bytes);
+    assert_eq!(session.metadata(), &legacy.metadata);
+    assert_eq!(
+        stages,
+        vec![
+            ProcessStage::Validate,
+            ProcessStage::Convolve,
+            ProcessStage::AppendReverse,
+            ProcessStage::Normalize
         ]
     );
 }

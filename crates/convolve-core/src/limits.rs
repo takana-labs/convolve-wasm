@@ -64,6 +64,38 @@ pub fn estimate_peak_bytes(
     Ok(estimated)
 }
 
+/// Peak storage used by the two-phase WASM output session. Unlike the legacy
+/// one-shot path this never retains a complete encoded WAV.
+pub fn estimate_streaming_peak_bytes(
+    a_frames: usize,
+    b_frames: usize,
+    append_reverse: bool,
+    crossfade_frames: usize,
+) -> Result<usize, ConvolveCoreError> {
+    let forward_frames = convolution_frames(a_frames, b_frames)?;
+    let fft_len = forward_frames
+        .checked_next_power_of_two()
+        .ok_or_else(overflow)?;
+    let decoded_frames = a_frames.checked_add(b_frames).ok_or_else(overflow)?;
+    if append_reverse {
+        forward_frames
+            .checked_mul(2)
+            .and_then(|frames| frames.checked_sub(crossfade_frames))
+            .ok_or_else(overflow)?;
+    }
+    let estimated = bytes_for_stereo(decoded_frames)?
+        .saturating_add(bytes_for_stereo(forward_frames)?)
+        .saturating_add(fft_len.checked_mul(24).ok_or_else(overflow)?)
+        .saturating_add(PCM24_CHUNK_BYTES.saturating_mul(2))
+        .saturating_add(FIXED_HEADROOM_BYTES);
+    if estimated > MAX_BYTES {
+        return Err(ConvolveCoreError::InputTooLarge {
+            estimated,
+            limit: MAX_BYTES,
+        });
+    }
+    Ok(estimated)
+}
 fn bytes_for_stereo(frames: usize) -> Result<usize, ConvolveCoreError> {
     frames
         .checked_mul(2)

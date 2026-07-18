@@ -17,14 +17,19 @@ pub use audio::StereoAudio;
 pub use beats::{BeatGrid, detect_beat_grid};
 pub use convolution::convolve_stereo;
 pub use error::ConvolveCoreError;
-pub use limits::{MAX_BYTES, convolution_frames, estimate_peak_bytes};
+pub use limits::{
+    MAX_BYTES, convolution_frames, estimate_peak_bytes, estimate_streaming_peak_bytes,
+};
 pub use options::{BeatPanSource, ProcessMetadata, ProcessOptions};
 pub use panning::apply_beat_pan;
-pub use processor::{ProcessResult, ProcessStage, process, process_with_progress};
+pub use processor::{
+    ProcessResult, ProcessSession, ProcessStage, process, process_session_with_progress,
+    process_with_progress,
+};
 pub use reverse::append_reverse;
 pub use true_peak::{NormalizationResult, estimate_true_peak, normalize_true_peak};
 #[cfg(target_arch = "wasm32")]
-pub use wasm::{WasmProcessResult, process_audio_wasm};
+pub use wasm::{WasmOutputSession, WasmProcessJob, WasmProcessResult, process_audio_wasm};
 pub use wav::{
     PCM24_CHUNK_BYTES, PCM24_CHUNK_FRAMES, WAV_HEADER_BYTES, encode_pcm24_chunk, encode_pcm24_wav,
     encode_pcm24_wav_to_sink, wav_pcm24_header,

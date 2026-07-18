@@ -48,6 +48,10 @@ class FakeWorker {
     }
   }
 
+  emitError(message = "fatal worker"): void {
+    const event = { message, filename: "worker.ts", lineno: 1, colno: 1 } as ErrorEvent;
+    for (const listener of this.errorListeners) listener(event);
+  }
   emitMessage(data: WorkerResponse): void {
     const event = { data } as MessageEvent<WorkerResponse>;
     for (const listener of this.messageListeners) listener(event);
@@ -191,4 +195,34 @@ describe("WorkerClient", () => {
       details: { estimatedBytes: 300_000_000, limitBytes: 268_435_456 },
     });
   });
-});
+
+  it("assembles ordered PCM chunks into an audio/wav Blob and pulls one chunk at a time", async () => {
+    const worker=new FakeWorker(); const client=new WorkerClient(()=>worker); const promise=client.process(decodedPair(),false,normalizeOptions()); const id=worker.posts[0]!.message.id; const header=new Uint8Array(68); header.set([82,73,70,70],0);header.set([87,65,86,69],8);header.set([100,97,116,97],60);new DataView(header.buffer).setUint32(64,18,true);
+    worker.emitMessage({type:"output-start",id,header:header.buffer,metadata:metadata(3)}); expect(worker.posts.at(-1)?.message).toMatchObject({type:"pull-output",id,sequence:0,offset:0,frames:3}); const pcm=Uint8Array.from({length:18},(_,index)=>index); worker.emitMessage({type:"output-chunk",id,sequence:0,offset:0,frames:3,pcm:pcm.buffer}); worker.emitMessage({type:"result",id,metadata:metadata(3)});
+    const result=await promise; expect(result.wav.type).toBe("audio/wav"); expect(Array.from(new Uint8Array(await result.wav.arrayBuffer()))).toEqual([...header,...pcm]);
+  });
+  it("rejects malformed, duplicate, and stale output without retaining a partial Blob", async () => {
+    const worker=new FakeWorker();const client=new WorkerClient(()=>worker);const promise=client.process(decodedPair(),false,normalizeOptions());const id=worker.posts[0]!.message.id;const header=new Uint8Array(68);header.set([82,73,70,70],0);header.set([87,65,86,69],8);header.set([100,97,116,97],60);new DataView(header.buffer).setUint32(64,12,true);worker.emitMessage({type:"output-start",id,header:header.buffer,metadata:metadata(2)});worker.emitMessage({type:"output-chunk",id,sequence:0,offset:1,frames:1,pcm:new Uint8Array(6).buffer});await expect(promise).rejects.toMatchObject({code:"PROCESSING_FAILED"});expect(worker.posts.at(-1)?.message).toMatchObject({type:"cancel",id});worker.emitMessage({type:"output-chunk",id,sequence:0,offset:0,frames:1,pcm:new Uint8Array(6).buffer});
+  });
+
+  it("recreates a worker after a fatal failure and accepts a subsequent request", async () => {
+    const first=new FakeWorker(),second=new FakeWorker();const factory=vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);const client=new WorkerClient(factory);const failed=client.process(decodedPair(),false,normalizeOptions());first.emitError();await expect(failed).rejects.toMatchObject({code:"PROCESSING_FAILED"});const next=client.process(decodedPair(),false,normalizeOptions());const id=second.posts[0]!.message.id;second.emitMessage({type:"result",id,wav:Uint8Array.from([82,73,70,70]).buffer,metadata:metadata(1)});await expect(next).resolves.toMatchObject({metadata:{outputFrames:1}});expect(factory).toHaveBeenCalledTimes(2);
+  });
+  it.each([
+    ["gap", { sequence: 1, offset: 0, frames: 1, bytes: 6 }],
+    ["wrong PCM byte length", { sequence: 0, offset: 0, frames: 1, bytes: 5 }],
+    ["wrong frames", { sequence: 0, offset: 0, frames: 0, bytes: 0 }],
+  ])("rejects a %s sequence/length violation", async (_name, bad) => {
+    const worker=new FakeWorker();const client=new WorkerClient(()=>worker);const promise=client.process(decodedPair(),false,normalizeOptions());const id=worker.posts[0]!.message.id;const header=new Uint8Array(68);header.set([82,73,70,70],0);header.set([87,65,86,69],8);header.set([100,97,116,97],60);new DataView(header.buffer).setUint32(64,12,true);worker.emitMessage({type:"output-start",id,header:header.buffer,metadata:metadata(2)});worker.emitMessage({type:"output-chunk",id,sequence:bad.sequence,offset:bad.offset,frames:bad.frames,pcm:new Uint8Array(bad.bytes).buffer});await expect(promise).rejects.toMatchObject({code:"PROCESSING_FAILED"});
+  });
+
+  it("does not issue the second pull until the first chunk arrives, and rejects premature totals", async () => {
+    const worker=new FakeWorker();const client=new WorkerClient(()=>worker);const promise=client.process(decodedPair(),false,normalizeOptions());const id=worker.posts[0]!.message.id;const frames=65_537;const header=new Uint8Array(68);header.set([82,73,70,70],0);header.set([87,65,86,69],8);header.set([100,97,116,97],60);new DataView(header.buffer).setUint32(64,frames*6,true);worker.emitMessage({type:"output-start",id,header:header.buffer,metadata:metadata(frames)});expect(worker.posts.filter(post=>post.message.type==="pull-output")).toHaveLength(1);worker.emitMessage({type:"result",id,metadata:metadata(frames)});await expect(promise).rejects.toMatchObject({code:"PROCESSING_FAILED"});
+  });
+
+  it("cancels and discards output when a progress callback throws, then handles a later request", async () => {
+    const worker=new FakeWorker();const client=new WorkerClient(()=>worker);const failed=client.process(decodedPair(),false,{...normalizeOptions(),onProgress:()=>{throw new Error("observer failed");}});const id=worker.posts[0]!.message.id;worker.emitMessage({type:"progress",id,event:{stage:"validate",fraction:.3}});await expect(failed).rejects.toThrow("observer failed");expect(worker.posts.at(-1)?.message).toMatchObject({type:"cancel",id});const next=client.process(decodedPair(),false,normalizeOptions());const nextId=worker.posts.at(-1)!.message.id;worker.emitMessage({type:"result",id:nextId,wav:new Uint8Array([82,73,70,70]).buffer,metadata:metadata(1)});await expect(next).resolves.toMatchObject({metadata:{outputFrames:1}});
+  });
+  it("rejects duplicate chunks and output-start metadata/header disagreement", async () => {
+    const worker=new FakeWorker();const client=new WorkerClient(()=>worker);const malformed=client.process(decodedPair(),false,normalizeOptions());const malformedId=worker.posts[0]!.message.id;const mismatch=new Uint8Array(68);mismatch.set([82,73,70,70],0);mismatch.set([87,65,86,69],8);mismatch.set([100,97,116,97],60);new DataView(mismatch.buffer).setUint32(64,6,true);worker.emitMessage({type:"output-start",id:malformedId,header:mismatch.buffer,metadata:metadata(2)});await expect(malformed).rejects.toMatchObject({code:"PROCESSING_FAILED"});const promise=client.process(decodedPair(),false,normalizeOptions());const id=worker.posts.at(-1)!.message.id;const header=new Uint8Array(68);header.set([82,73,70,70],0);header.set([87,65,86,69],8);header.set([100,97,116,97],60);new DataView(header.buffer).setUint32(64,12,true);worker.emitMessage({type:"output-start",id,header:header.buffer,metadata:metadata(2)});worker.emitMessage({type:"output-chunk",id,sequence:0,offset:0,frames:1,pcm:new Uint8Array(6).buffer});worker.emitMessage({type:"output-chunk",id,sequence:0,offset:0,frames:1,pcm:new Uint8Array(6).buffer});await expect(promise).rejects.toMatchObject({code:"PROCESSING_FAILED"});
+  });});

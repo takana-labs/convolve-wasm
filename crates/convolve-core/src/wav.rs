@@ -34,7 +34,7 @@ pub(crate) fn encode_pcm24_wav_view<V: StereoSampleView>(
     Ok(output)
 }
 
-fn encode_pcm24_view_chunk_into<V: StereoSampleView>(
+pub(crate) fn encode_pcm24_view_chunk_into<V: StereoSampleView>(
     view: &V,
     offset: usize,
     frames: usize,
@@ -98,6 +98,15 @@ pub fn wav_pcm24_header(frames: usize) -> Result<[u8; WAV_HEADER_BYTES], Convolv
     Ok(header)
 }
 
+pub(crate) fn encode_pcm24_wav_view_chunk<V: StereoSampleView>(
+    view: &V,
+    offset: usize,
+    frames: usize,
+) -> Result<Vec<u8>, ConvolveCoreError> {
+    let mut chunk = Vec::with_capacity(frames.saturating_mul(6));
+    encode_pcm24_view_chunk_into(view, offset, frames, &mut chunk)?;
+    Ok(chunk)
+}
 pub fn encode_pcm24_chunk(
     audio: &StereoAudio,
     offset: usize,
