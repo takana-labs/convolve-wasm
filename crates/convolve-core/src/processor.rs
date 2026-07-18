@@ -1,7 +1,7 @@
+use crate::convolution::convolve_stereo_after_guard;
 use crate::{
     BeatPanSource, ConvolveCoreError, ProcessMetadata, ProcessOptions, SAMPLE_RATE, StereoAudio,
-    apply_beat_pan, convolve_stereo, detect_beat_grid, estimate_peak_bytes,
-    estimate_streaming_peak_bytes,
+    apply_beat_pan, detect_beat_grid, estimate_peak_bytes, estimate_streaming_peak_bytes,
     true_peak::normalization_for_view,
     views::{ForwardView, GainView, PalindromeView, StereoSampleView},
     wav::{encode_pcm24_wav_view, encode_pcm24_wav_view_chunk, wav_pcm24_header},
@@ -179,7 +179,7 @@ where
         0
     };
     on_progress(ProcessStage::Validate);
-    let mut output = convolve_stereo(a, b)?;
+    let mut output = convolve_stereo_after_guard(a, b)?;
     on_progress(ProcessStage::Convolve);
     let (detected_beats, detected_bpm, beat_confidence) = match options.beat_pan {
         Some(source) => {

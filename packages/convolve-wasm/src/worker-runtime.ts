@@ -25,8 +25,8 @@ interface ActiveOutput { request: WorkerProcessRequest; job: WasmProcessJobLike;
 interface StartingOutput { request: WorkerProcessRequest; cancelled: boolean; }
 export function createWorkerRequestHandler(dependencies: WorkerRuntimeDependencies):(request: WorkerRequest)=>Promise<void>{
  let wasmPromise:Promise<WasmModuleLike>|undefined; const getWasm=()=>wasmPromise??=(dependencies.loadWasm()); const queued:WorkerProcessRequest[]=[]; let active:ActiveOutput|undefined; let starting:StartingOutput|undefined; let draining=false;
- const cleanup=(state:ActiveOutput|undefined)=>{if(!state)return; try{state.session.free();}finally{state.job.free();}};
- const fail=(id:string,cause:unknown,code:ConvolveErrorCode="PROCESSING_FAILED",message="Audio processing failed")=>dependencies.postMessage({type:"error",id,error:serializeError(cause,code,message)});
+ const cleanup=(state:ActiveOutput|undefined)=>{if(!state)return;try{state.session.free();}catch{}try{state.job.free();}catch{}};
+ const fail=(id:string,cause:unknown,code:ConvolveErrorCode="PROCESSING_FAILED",message="Audio processing failed")=>{try{dependencies.postMessage({type:"error",id,error:serializeError(cause,code,message)});}catch{}};
  const startNext=async():Promise<void>=>{
   if(active||draining)return;
   const request=queued.shift();
@@ -67,7 +67,7 @@ export function createWorkerRequestHandler(dependencies: WorkerRuntimeDependenci
    if(start.cancelled){session.free();job.free();return;}
    active={request,job,session,metadata,nextSequence:0,nextOffset:0};
    dependencies.postMessage({type:"output-start",id:request.id,header,metadata},[header]);
-  }catch(cause){if(!start.cancelled)fail(request.id,cause);}finally{
+  }catch(cause){const state=active;if(state?.request===request){active=undefined;cleanup(state);}if(!start.cancelled)fail(request.id,cause);}finally{
    if(starting===start)starting=undefined;
    draining=false;
    if(!active)void startNext();

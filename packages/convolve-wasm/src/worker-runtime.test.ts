@@ -160,6 +160,61 @@ describe("worker request runtime", () => {
     await handle({type:"pull-output",id:"first",sequence:0,offset:0,frames:1}); await new Promise(resolve=>setTimeout(resolve,0));expect(posts.filter(r=>r.type==="output-start").map(r=>r.id)).toEqual(["first","second"]);expect(posts.filter(r=>r.type==="progress"&&["encode","done"].includes(r.event.stage)).map(r=>(r as Extract<WorkerResponse,{type:"progress"}>).event.stage)).toEqual(["encode","done"]);
   });
 
+  it("cleans up an active session when output-start delivery and its error delivery throw", async () => {
+    const freeJob = vi.fn();
+    const freeSession = vi.fn();
+    const header = new Uint8Array(68);
+    header.set([82, 73, 70, 70], 0);
+    header.set([87, 65, 86, 69], 8);
+    header.set([100, 97, 116, 97], 60);
+    new DataView(header.buffer).setUint32(64, 6, true);
+    const Job = vi.fn(function () {
+      return {
+        free: freeJob,
+        process: () => ({
+          sampleRate: 48_000,
+          channels: 2,
+          durationSeconds: 1 / 48_000,
+          outputFrames: 1,
+          detectedBeats: 0,
+          detectedBpm: undefined,
+          beatConfidence: undefined,
+          appliedGainDb: 0,
+          estimatedTruePeakDbtp: -1,
+          wav_header: () => header,
+          pcm24_chunk: () => new Uint8Array(6),
+          free: freeSession,
+        }),
+      };
+    });
+    let failFirstDelivery = true;
+    const posts: WorkerResponse[] = [];
+    const handle = createWorkerRequestHandler({
+      loadWasm: async () => ({ WasmProcessJob: Job as never }),
+      postMessage: (response) => {
+        if (
+          failFirstDelivery &&
+          response.id === "first" &&
+          (response.type === "output-start" || response.type === "error")
+        ) {
+          throw new Error("delivery failed");
+        }
+        posts.push(response);
+      },
+    });
+
+    await expect(handle(request("first"))).resolves.toBeUndefined();
+    expect(freeSession).toHaveBeenCalledOnce();
+    expect(freeJob).toHaveBeenCalledOnce();
+
+    failFirstDelivery = false;
+    await handle(request("second"));
+    expect(posts).toContainEqual(expect.objectContaining({ type: "output-start", id: "second" }));
+    await handle({ type: "pull-output", id: "second", sequence: 0, offset: 0, frames: 1 });
+    expect(posts).toContainEqual(expect.objectContaining({ type: "result", id: "second" }));
+    expect(freeSession).toHaveBeenCalledTimes(2);
+    expect(freeJob).toHaveBeenCalledTimes(2);
+  });
   it("rejects duplicate/malformed pulls and cleans up an active cancellation", async () => {
     const free=vi.fn();const header=new Uint8Array(68);header.set([82,73,70,70],0);header.set([87,65,86,69],8);header.set([100,97,116,97],60);new DataView(header.buffer).setUint32(64,12,true);const Job=vi.fn(function(){return {free,process:()=>({sampleRate:48_000,channels:2,durationSeconds:2/48_000,outputFrames:2,detectedBeats:0,detectedBpm:undefined,beatConfidence:undefined,appliedGainDb:0,estimatedTruePeakDbtp:-1,wav_header:()=>header,pcm24_chunk:()=>new Uint8Array(6),free})};});const posts:WorkerResponse[]=[];const handle=createWorkerRequestHandler({loadWasm:async()=>({WasmProcessJob:Job as never}),postMessage:r=>posts.push(r)});await handle(request("bad"));await handle({type:"pull-output",id:"bad",sequence:0,offset:1,frames:1});expect(posts.at(-1)).toMatchObject({type:"error",id:"bad"});expect(free).toHaveBeenCalledTimes(2);await handle(request("cancel"));await handle({type:"cancel",id:"cancel"});expect(posts.at(-1)).toMatchObject({type:"error",id:"cancel"});expect(free).toHaveBeenCalledTimes(4);
   });

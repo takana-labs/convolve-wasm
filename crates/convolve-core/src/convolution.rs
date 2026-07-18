@@ -4,7 +4,15 @@ use crate::{ConvolveCoreError, SAMPLE_RATE, StereoAudio, convolution_frames, est
 
 pub fn convolve_stereo(a: &StereoAudio, b: &StereoAudio) -> Result<StereoAudio, ConvolveCoreError> {
     estimate_peak_bytes(a.frames(), b.frames(), false, 0)?;
+    convolve_stereo_after_guard(a, b)
+}
 
+/// Convolve after the caller has applied the memory guard for its own output model.
+/// The public wrapper remains conservative for callers that materialize a full WAV.
+pub(crate) fn convolve_stereo_after_guard(
+    a: &StereoAudio,
+    b: &StereoAudio,
+) -> Result<StereoAudio, ConvolveCoreError> {
     let left = convolve_channel(&a.left, &b.left)?;
     let right = convolve_channel(&a.right, &b.right)?;
     StereoAudio::new(SAMPLE_RATE, left, right)
