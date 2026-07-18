@@ -10,7 +10,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: [["list"]],
   use: {
-    baseURL: "http://127.0.0.1:4173/convolve-wasm/",
+    baseURL: "http://127.0.0.1:4173/",
     trace: "retain-on-failure",
   },
   projects: [
@@ -25,13 +25,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command:
-      "npm run preview -w @takana-labs/convolve-demo -- --host 127.0.0.1 --port 4173",
-    url: "http://127.0.0.1:4173/convolve-wasm/",
-    env: {
-      ...process.env,
-      CONVOLVE_DEMO_BASE: "/convolve-wasm/",
-    },
+    command: "npm run preview -w @takana-labs/convolve-demo -- --host 127.0.0.1 --port 4173",
+    url: "http://127.0.0.1:4173/",
     reuseExistingServer: false,
     timeout: 120_000,
   },

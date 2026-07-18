@@ -14,13 +14,58 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  pages-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pages: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Collect GitHub Pages metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          collect() {
+            local endpoint="$1"
+            local destination="$2"
+            if ! timeout 20s gh api "$endpoint" > "$destination"; then
+              printf '{"_preflight_error":"GitHub API request failed for %s"}\n' "$endpoint" > "$destination"
+            fi
+          }
+          collect "repos/${GITHUB_REPOSITORY}/pages" "$RUNNER_TEMP/pages.json"
+          collect "repos/${GITHUB_REPOSITORY}" "$RUNNER_TEMP/repository.json"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+
+      - name: Check synchronized site URL
+        run: npm run check:site-url
+
+      - name: Validate GitHub Pages settings
+        env:
+          PAGES_METADATA_PATH: ${{ runner.temp }}/pages.json
+          REPOSITORY_METADATA_PATH: ${{ runner.temp }}/repository.json
+        run: node scripts/pages-preflight.mjs
+
   build:
+    needs: pages-preflight
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -54,7 +99,7 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Test GitHub Pages subpath
+      - name: Test GitHub Pages root and transfer paths
         run: npm run test:pages
 
       - name: Configure GitHub Pages
@@ -79,3 +124,23 @@ jobs:
       - name: Deploy GitHub Pages artifact
         id: deployment
         uses: actions/deploy-pages@v4
+
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+
+      - name: Verify deployed Pages SHA and assets
+        run: node scripts/public-site-smoke.mjs

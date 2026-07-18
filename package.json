@@ -11,6 +11,10 @@
     "build:wasm": "cd crates/convolve-core && wasm-pack build --target web --out-dir ../../packages/convolve-wasm/src/wasm --out-name convolve_core",
     "build": "npm run build:wasm && npm run build -w @takana-labs/convolve-wasm && npm run build -w @takana-labs/convolve-demo",
     "build:pages": "node scripts/build-pages.mjs",
+    "sync:site-url": "node scripts/sync-site-url.mjs",
+    "check:site-url": "node scripts/sync-site-url.mjs --check",
+    "preflight:pages": "node scripts/pages-preflight.mjs",
+    "smoke:pages:public": "node scripts/public-site-smoke.mjs",
     "validate:docs": "node scripts/validate-doc-assets.mjs",
     "validate:identity": "node scripts/validate-project-identity.mjs",
     "validate:links": "node scripts/validate-repo-links.mjs",
@@ -19,8 +23,9 @@
     "test:ts": "npm run build:wasm && npm run build -w @takana-labs/convolve-wasm && npm run test -w @takana-labs/convolve-wasm",
     "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
     "test:pages": "playwright test -c tests/pages/playwright.config.ts",
+    "test:site": "node --test tests/site-config.test.mjs tests/site-url-sync.test.mjs tests/pages-artifact.test.mjs tests/pages-failure-modes.test.mjs tests/npm-command.test.mjs tests/pages-preflight.test.mjs tests/public-site-smoke.test.mjs tests/pages-workflows.test.mjs",
     "test": "npm run test:rust && npm run test:ts",
-    "check": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && npm run validate:docs && npm run validate:identity && npm run validate:links && npm run test && npm run build && npm run validate:jsr",
+    "check": "npm run check:site-url && npm run test:site && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && npm run validate:docs && npm run validate:identity && npm run validate:links && npm run test && npm run build && npm run validate:jsr",
     "validate:jsr": "cd packages/convolve-wasm && npx --yes jsr@0.14.3 publish --dry-run"
   },
   "devDependencies": {

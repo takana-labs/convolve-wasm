@@ -2,7 +2,10 @@ import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { readSiteConfig } from "./site-config.mjs";
+
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const siteConfig = readSiteConfig(path.join(root, "site.config.json"));
 const docsRoot = path.join(root, "docs");
 const ignoredDirectories = new Set(["superpowers"]);
 const sourceFiles = [
@@ -68,7 +71,7 @@ for (const file of files) {
       continue;
     }
 
-    if (reference === "https://convolve-wasm.app/") {
+    if (reference === siteConfig.publicUrl) {
       checked += 1;
       continue;
     }
