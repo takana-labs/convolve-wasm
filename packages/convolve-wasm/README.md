@@ -19,4 +19,6 @@ const result = await CONVOLVE({ a: fileA, b: fileB });
 const url = URL.createObjectURL(result.wav);
 ```
 
+v0.1.1 performs a device-aware, post-decode memory preflight before worker creation. Unsafe work rejects with `INPUT_TOO_LARGE` and byte/frame details; the independent 256 MiB Rust/WASM guard remains active.
+
 The package includes its worker and WebAssembly assets. Consumers should import only from the package root; no CDN, upload service, or server-side audio processing is required.

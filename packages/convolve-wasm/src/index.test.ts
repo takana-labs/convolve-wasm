@@ -1,12 +1,16 @@
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import { createConvolver } from "./convolver";
+import {
+  createConvolver,
+  type ConvolverWorkerClient,
+} from "./convolver";
 import type {
   AudioDecodeBackend,
   DecodedInputPair,
 } from "./decode";
 import { ConvolveError } from "./errors";
 import { CONVOLVE } from "./index";
+import { MIB } from "./memory-plan";
 import type { NormalizedConvolveOptions } from "./options";
 import type {
   ConvolveOptions,
@@ -124,5 +128,134 @@ describe("CONVOLVE", () => {
     );
     expect(decode).not.toHaveBeenCalled();
     expect(process).not.toHaveBeenCalled();
+  });
+
+  it("rejects a risky decoded request before starting the worker", async () => {
+    const decode = vi
+      .fn<AudioDecodeBackend["decode"]>()
+      .mockResolvedValueOnce({
+        ...decoded.a,
+        frames: 770_684,
+      })
+      .mockResolvedValueOnce({
+        ...decoded.b,
+        frames: 1_736_481,
+      });
+    const process = vi.fn();
+    const convolve = createConvolver({
+      getDecodeBackend: () => ({ decode }),
+      getMemoryBudget: () => ({
+        budgetBytes: 192 * MIB,
+        deviceMemoryGiB: 4,
+      }),
+      workerClient: { process },
+    });
+
+    await expect(convolve(files())).rejects.toMatchObject({
+      code: "INPUT_TOO_LARGE",
+      details: {
+        estimatedBytes: 294_676_426,
+        limitBytes: 201_326_592,
+        aFrames: 770_684,
+        bFrames: 1_736_481,
+        outputFrames: 2_507_164,
+        finalFrames: 2_507_164,
+        fftFrames: 4_194_304,
+        appendReverse: false,
+        reverseCrossfadeFrames: 240,
+        beatPan: null,
+        deviceMemoryGiB: 4,
+      },
+    });
+    expect(decode).toHaveBeenCalledTimes(2);
+    expect(process).not.toHaveBeenCalled();
+  });
+
+  it("serializes concurrent renders so their memory peaks cannot overlap", async () => {
+    let finishFirst: ((result: ConvolveResult) => void) | undefined;
+    const firstResult = new Promise<ConvolveResult>((resolve) => {
+      finishFirst = resolve;
+    });
+    const result: ConvolveResult = {
+      wav: new Blob([], { type: "audio/wav" }),
+      metadata: {
+        sampleRate: 48_000,
+        channels: 2,
+        durationSeconds: 1 / 48_000,
+        outputFrames: 1,
+        detectedBeats: 0,
+        detectedBpm: null,
+        beatConfidence: null,
+        appliedGainDb: 0,
+        estimatedTruePeakDbtp: -1,
+      },
+    };
+    const decode = vi.fn<AudioDecodeBackend["decode"]>().mockResolvedValue(
+      decoded.a,
+    );
+    const process = vi
+      .fn<ConvolverWorkerClient["process"]>()
+      .mockReturnValueOnce(firstResult)
+      .mockResolvedValueOnce(result);
+    const convolve = createConvolver({
+      getDecodeBackend: () => ({ decode }),
+      workerClient: { process },
+    });
+
+    const first = convolve(files());
+    await vi.waitFor(() => expect(process).toHaveBeenCalledTimes(1));
+    const second = convolve(files());
+
+    await Promise.resolve();
+    expect(decode).toHaveBeenCalledTimes(2);
+    expect(process).toHaveBeenCalledTimes(1);
+
+    finishFirst?.(result);
+    await first;
+    await second;
+    expect(decode).toHaveBeenCalledTimes(4);
+    expect(process).toHaveBeenCalledTimes(2);
+  });
+
+  it("snapshots mutable request arguments when submitted", async () => {
+    const decode = vi
+      .fn<AudioDecodeBackend["decode"]>()
+      .mockResolvedValue(decoded.a);
+    const process = vi.fn<ConvolverWorkerClient["process"]>().mockResolvedValue({
+      wav: new Blob([], { type: "audio/wav" }),
+      metadata: {
+        sampleRate: 48_000,
+        channels: 2,
+        durationSeconds: 1 / 48_000,
+        outputFrames: 1,
+        detectedBeats: 0,
+        detectedBpm: null,
+        beatConfidence: null,
+        appliedGainDb: 0,
+        estimatedTruePeakDbtp: -1,
+      },
+    });
+    const convolve = createConvolver({
+      getDecodeBackend: () => ({ decode }),
+      workerClient: { process },
+    });
+    const options: ConvolveOptions = { beatPan: null };
+    const audio = files();
+    const submittedA = audio.a;
+    const submittedB = audio.b;
+
+    const pending = convolve(audio, false, options);
+    audio.a = new File([], "replacement-a.wav");
+    audio.b = new File([], "replacement-b.wav");
+    options.beatPan = "a";
+    await pending;
+
+    expect(decode).toHaveBeenNthCalledWith(1, submittedA);
+    expect(decode).toHaveBeenNthCalledWith(2, submittedB);
+    expect(process).toHaveBeenCalledWith(
+      expect.anything(),
+      false,
+      expect.objectContaining({ beatPan: null }),
+    );
   });
 });

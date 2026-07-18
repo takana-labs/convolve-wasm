@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "vitest run",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@takana-labs/convolve-wasm": "0.1.0"
+    "@takana-labs/convolve-wasm": "0.1.1"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

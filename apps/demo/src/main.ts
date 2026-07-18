@@ -5,6 +5,7 @@ import {
   type ConvolveMetadata,
 } from "@takana-labs/convolve-wasm";
 
+import { formatConvolveError } from "./error-message";
 import "./styles.css";
 import "./footer-icons.css";
 
@@ -108,7 +109,7 @@ run.addEventListener("click", async () => {
     );
   } catch (error) {
     if (error instanceof ConvolveError) {
-      setStatus("error", `${error.code}: ${error.message}`);
+      setStatus("error", formatConvolveError(error));
     } else {
       const message = error instanceof Error ? error.message : "Unknown error";
       setStatus("error", `PROCESSING_FAILED: ${message}`);

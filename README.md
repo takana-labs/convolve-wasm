@@ -54,13 +54,14 @@ Accepted filename extensions are `.wav` and `.m4a`, case-insensitive. WAV is the
 The pipeline is fixed:
 
 1. Decode and resample A and B to planar stereo at 48 kHz.
-2. Reject a conservative estimated WASM allocation above exactly 256 MiB.
-3. Perform full, wet-only, channel-wise linear convolution.
-4. Optionally detect beats from original A or B and extend the grid through the convolution tail.
-5. Optionally collapse the convolved signal to mono and pan it left/right with equal-power gains on alternating beats.
-6. Optionally append an exact sample-time reversal with a complementary midpoint crossfade.
-7. Estimate true peak at 4× using a 32-tap Blackman-windowed sinc and attenuate only when necessary.
-8. Encode stereo 48 kHz signed 24-bit PCM WAV.
+2. Estimate cross-layer browser peak memory and reject unsafe work before creating a worker.
+3. Retain the independent Rust/WASM allocation guard at exactly 256 MiB.
+4. Perform full, wet-only, channel-wise linear convolution.
+5. Optionally detect beats from original A or B and extend the grid through the convolution tail.
+6. Optionally collapse the convolved signal to mono and pan it left/right with equal-power gains on alternating beats.
+7. Optionally append an exact sample-time reversal with a complementary midpoint crossfade.
+8. Estimate true peak at 4× using a 32-tap Blackman-windowed sinc and attenuate only when necessary.
+9. Encode stereo 48 kHz signed 24-bit PCM WAV.
 
 Convolution length is `aFrames + bFrames - 1`. With reverse append and an effective crossfade of `x` frames, output length is `2 * convolutionFrames - x`.
 
@@ -97,6 +98,19 @@ npm run test:ts
 npm run build
 npm run test:e2e
 ```
+
+Local browser testing uses the project-owned lifecycle commands:
+
+```bash
+npm run app:doctor
+npm run app:status
+npm run app:start:hidden
+npm run app:ready
+npm run app:logs -- --tail 100
+npm run app:stop
+```
+
+Lifecycle logs append under `app_work/runtime/`. Hidden start builds the demo, serves the built files on loopback, verifies readiness, and records an app-owned PID for teardown.
 
 Generated wasm-bindgen files under `packages/convolve-wasm/src/wasm/` are build artifacts and are not committed.
 

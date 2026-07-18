@@ -4,6 +4,12 @@ import {
   type DecodedInputPair,
 } from "./decode";
 import { ConvolveError } from "./errors";
+import {
+  browserMemoryBudget,
+  estimateFullPipelineMemory,
+  millisecondsToFrames,
+  type MemoryBudget,
+} from "./memory-plan";
 import { normalizeOptions, type NormalizedConvolveOptions } from "./options";
 import type { ConvolveOptions, ConvolveResult } from "./types";
 
@@ -17,6 +23,7 @@ export interface ConvolverWorkerClient {
 
 export interface ConvolverDependencies {
   getDecodeBackend(): AudioDecodeBackend;
+  getMemoryBudget?(): MemoryBudget;
   workerClient: ConvolverWorkerClient;
 }
 
@@ -43,6 +50,57 @@ export function validateAudioInputObject(
 }
 
 export function createConvolver(dependencies: ConvolverDependencies) {
+  let renderQueue: Promise<void> = Promise.resolve();
+
+  async function convolveOnce(
+    audio: { a: File; b: File },
+    appendReverse: boolean,
+    normalized: NormalizedConvolveOptions,
+  ): Promise<ConvolveResult> {
+    const decoded = await decodeInputPair(
+      audio,
+      dependencies.getDecodeBackend(),
+      normalized.onProgress,
+    );
+    const reverseCrossfadeFrames = millisecondsToFrames(
+      normalized.reverseCrossfadeMs,
+    );
+    const memoryPlan = estimateFullPipelineMemory({
+      aFrames: decoded.a.frames,
+      bFrames: decoded.b.frames,
+      encodedInputBytes: audio.a.size + audio.b.size,
+      appendReverse,
+      reverseCrossfadeFrames,
+      beatPan: normalized.beatPan !== null,
+    });
+    const memoryBudget =
+      dependencies.getMemoryBudget?.() ?? browserMemoryBudget();
+    if (memoryPlan.estimatedBytes > memoryBudget.budgetBytes) {
+      throw new ConvolveError(
+        "INPUT_TOO_LARGE",
+        `Estimated peak memory ${memoryPlan.estimatedBytes} bytes exceeds this device's safe limit of ${memoryBudget.budgetBytes} bytes`,
+        {
+          estimatedBytes: memoryPlan.estimatedBytes,
+          limitBytes: memoryBudget.budgetBytes,
+          aFrames: decoded.a.frames,
+          bFrames: decoded.b.frames,
+          outputFrames: memoryPlan.outputFrames,
+          finalFrames: memoryPlan.finalFrames,
+          fftFrames: memoryPlan.fftFrames,
+          appendReverse,
+          reverseCrossfadeFrames,
+          beatPan: normalized.beatPan,
+          deviceMemoryGiB: memoryBudget.deviceMemoryGiB,
+        },
+      );
+    }
+    return dependencies.workerClient.process(
+      decoded,
+      appendReverse,
+      normalized,
+    );
+  }
+
   return async function convolve(
     audio: { a: File; b: File },
     appendReverse = false,
@@ -58,15 +116,17 @@ export function createConvolver(dependencies: ConvolverDependencies) {
     }
 
     const normalized = normalizeOptions(options);
-    const decoded = await decodeInputPair(
-      audio,
-      dependencies.getDecodeBackend(),
-      normalized.onProgress,
+    const submittedAudio = {
+      a: audio.a,
+      b: audio.b,
+    };
+    const result = renderQueue.then(() =>
+      convolveOnce(submittedAudio, appendReverse, normalized),
     );
-    return dependencies.workerClient.process(
-      decoded,
-      appendReverse,
-      normalized,
+    renderQueue = result.then(
+      () => undefined,
+      () => undefined,
     );
+    return result;
   };
 }

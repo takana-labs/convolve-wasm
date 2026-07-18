@@ -2,7 +2,11 @@
 
 ## Supported boundary
 
-The release target is current desktop Chrome/Edge and Safari.
+The established release target is current desktop Chrome/Edge and Safari. v0.1.1 is a mobile-safety candidate for current Android Chrome: it adds device-aware rejection before worker creation so risky jobs produce a readable `INPUT_TOO_LARGE` message instead of intentionally entering the worker/WASM allocation path.
+
+This release does not yet claim that large renders complete on Android. Reduced-memory full FFT is planned for v0.1.2 and bounded-memory convolution for v0.2.0. Official Android completion support remains gated on those releases and a documented physical 4 GB Android test. iOS is best effort.
+
+The v0.1.1 private-pair planning and test record is in [the mobile safe-rejection evidence](testing/2026-07-17-mobile-safe-rejection.md).
 
 - WAV is the automated portability baseline.
 - M4A is passed to `decodeAudioData()` and depends on codecs exposed by the browser and operating system.
@@ -11,6 +15,8 @@ The release target is current desktop Chrome/Edge and Safari.
 - Processing is single-threaded WASM in a dedicated worker and does not require `SharedArrayBuffer`, COOP, or COEP headers.
 
 The real-world input that shaped the decoder decision was identified during planning as stereo, 48 kHz HE-AAC in an M4A container. A pure Rust AAC-LC-only decoder would not reliably cover that profile, so v0.1.0 uses the native browser media stack.
+- Browser budgets range from 64 MiB to 384 MiB and use the reported `navigator.deviceMemory` class when available.
+- The independent 256 MiB Rust/WASM allocation guard remains active.
 
 ## Automated WAV validation
 
