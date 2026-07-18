@@ -1,6 +1,6 @@
 use convolve_core::{
-    BeatPanSource, MAX_BYTES, ProcessOptions, ProcessStage, SAMPLE_RATE, StereoAudio,
-    convolution_frames, estimate_peak_bytes, process, process_with_progress,
+    BeatPanSource, ConvolveCoreError, MAX_BYTES, ProcessOptions, ProcessStage, SAMPLE_RATE,
+    StereoAudio, convolution_frames, estimate_peak_bytes, process, process_with_progress,
 };
 
 #[test]
@@ -60,12 +60,31 @@ fn estimates_small_request_below_limit() {
 }
 
 #[test]
-fn rust_guard_uses_the_reduced_option_independent_workspace_model() {
+fn whole_wav_guard_accounts_for_the_retained_and_copied_output() {
     let plain = estimate_peak_bytes(48_000, 24_000, false, 0).unwrap();
     let reverse = estimate_peak_bytes(48_000, 24_000, true, 240).unwrap();
-    assert_eq!(plain, 21_861_368);
-    assert_eq!(reverse, plain);
+    assert_eq!(plain, 22_725_492);
+    assert_eq!(reverse, 23_586_600);
+    assert!(reverse > plain);
 }
+#[test]
+fn whole_wav_guard_rejects_a_large_reverse_job_before_streaming_exists() {
+    // The reduced future streaming workspace fits within 256 MiB for this job,
+    // but the current one-shot WASM result retains and then copies the complete
+    // reverse WAV. The active guard must reject it until output is pull-based.
+    let reduced_streaming_workspace = 182_226_936;
+    assert!(reduced_streaming_workspace < MAX_BYTES);
+
+    let error = estimate_peak_bytes(2_000_000, 2_000_000, true, 240).unwrap_err();
+    assert!(matches!(
+        error,
+        ConvolveCoreError::InputTooLarge {
+            estimated: 278_224_168,
+            limit: MAX_BYTES
+        }
+    ));
+}
+
 #[test]
 fn rejects_estimates_over_256_mib() {
     let error = estimate_peak_bytes(20_000_000, 20_000_000, true, 240).unwrap_err();
