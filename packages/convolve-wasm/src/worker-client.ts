@@ -24,7 +24,7 @@ function validateMetadata(metadata:ConvolveMetadata):void{
  if(!Number.isSafeInteger(metadata.detectedBeats)||metadata.detectedBeats<0)throw protocolError("invalid detected beat count metadata");
  if(metadata.detectedBpm!==null&&!isFiniteNumber(metadata.detectedBpm))throw protocolError("invalid BPM metadata");
  if(metadata.beatConfidence!==null&&!isFiniteNumber(metadata.beatConfidence))throw protocolError("invalid beat confidence metadata");
- if(!isFiniteNumber(metadata.appliedGainDb)||!isFiniteNumber(metadata.estimatedTruePeakDbtp))throw protocolError("invalid gain or peak metadata");
+ if(!isFiniteNumber(metadata.appliedGainDb)||!(isFiniteNumber(metadata.estimatedTruePeakDbtp)||metadata.estimatedTruePeakDbtp===Number.NEGATIVE_INFINITY))throw protocolError("invalid gain or peak metadata");
 }
 function validateHeader(header:ArrayBuffer, frames:number):void{
  if(header.byteLength!==WAV_HEADER_BYTES)throw protocolError("unexpected WAV header length");

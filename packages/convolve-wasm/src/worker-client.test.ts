@@ -306,7 +306,8 @@ describe("WorkerClient", () => {
     ["non-finite BPM", (value: ConvolveMetadata) => ({ ...value, detectedBpm: Number.NaN })],
     ["non-finite confidence", (value: ConvolveMetadata) => ({ ...value, beatConfidence: Number.POSITIVE_INFINITY })],
     ["non-finite gain", (value: ConvolveMetadata) => ({ ...value, appliedGainDb: Number.NaN })],
-    ["non-finite true peak", (value: ConvolveMetadata) => ({ ...value, estimatedTruePeakDbtp: Number.NEGATIVE_INFINITY })],
+    ["NaN true peak", (value: ConvolveMetadata) => ({ ...value, estimatedTruePeakDbtp: Number.NaN })],
+    ["positive infinite true peak", (value: ConvolveMetadata) => ({ ...value, estimatedTruePeakDbtp: Number.POSITIVE_INFINITY })],
   ])("rejects output-start metadata with %s", async (_name, mutate) => {
     const worker = new FakeWorker();
     const client = new WorkerClient(() => worker);
@@ -317,5 +318,31 @@ describe("WorkerClient", () => {
 
     await expect(pending).rejects.toMatchObject({ code: "PROCESSING_FAILED" });
     expect(worker.posts.at(-1)?.message).toMatchObject({ type: "cancel", id });
+  });
+
+  it("accepts silent negative-infinite true-peak output and recovers after invalid peaks", async () => {
+    const worker = new FakeWorker();
+    const client = new WorkerClient(() => worker);
+    const silent = client.process(decodedPair(), false, normalizeOptions());
+    const silentId = worker.posts[0]!.message.id;
+    const silentMetadata = { ...metadata(1), estimatedTruePeakDbtp: Number.NEGATIVE_INFINITY };
+
+    worker.emitMessage({ type: "output-start", id: silentId, header: validHeader(1).buffer, metadata: silentMetadata });
+    worker.emitMessage({ type: "output-chunk", id: silentId, sequence: 0, offset: 0, frames: 1, pcm: new Uint8Array(6).buffer });
+    worker.emitMessage({ type: "result", id: silentId, metadata: silentMetadata });
+    await expect(silent).resolves.toMatchObject({ metadata: { estimatedTruePeakDbtp: Number.NEGATIVE_INFINITY } });
+
+    for (const invalidPeak of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const invalid = client.process(decodedPair(), false, normalizeOptions());
+      const invalidId = worker.posts.at(-1)!.message.id;
+      worker.emitMessage({ type: "output-start", id: invalidId, header: validHeader(1).buffer, metadata: { ...metadata(1), estimatedTruePeakDbtp: invalidPeak } });
+      await expect(invalid).rejects.toMatchObject({ code: "PROCESSING_FAILED" });
+      expect(worker.posts.at(-1)?.message).toMatchObject({ type: "cancel", id: invalidId });
+    }
+
+    const later = client.process(decodedPair(), false, normalizeOptions());
+    const laterId = worker.posts.at(-1)!.message.id;
+    worker.emitMessage({ type: "result", id: laterId, wav: new Uint8Array([82, 73, 70, 70]).buffer, metadata: metadata(1) });
+    await expect(later).resolves.toMatchObject({ metadata: { outputFrames: 1 } });
   });
 });
