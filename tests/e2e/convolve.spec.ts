@@ -107,3 +107,27 @@ test("reports detected beats for a 120 BPM click track", async ({ page }) => {
   );
   expectNoBrowserFailures(failures);
 });
+
+test("rejects risky mobile renders with actionable memory guidance", async ({
+  page,
+}) => {
+  const failures = watchFailures(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "deviceMemory", {
+      configurable: true,
+      value: 1,
+    });
+  });
+  await page.goto("/");
+  const longAudio = makeClickTrackWav();
+  await setAudioFiles(page, longAudio, longAudio);
+
+  await page.locator("#run").click();
+  const status = page.locator("#status");
+  await expect(status).toHaveAttribute("data-state", "error");
+  await expect(status).toContainText("INPUT_TOO_LARGE");
+  await expect(status).toContainText(/needs about 105 MiB/i);
+  await expect(status).toContainText(/64 MiB safe limit/i);
+  await expect(status).toContainText(/shorter files/i);
+  expectNoBrowserFailures(failures);
+});

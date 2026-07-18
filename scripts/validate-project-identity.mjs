@@ -35,7 +35,9 @@ function expectEqual(actual, expected, label) {
 }
 
 const packageManifest = readJson("packages/convolve-wasm/package.json");
+const packageVersion = packageManifest.version;
 expectEqual(packageManifest.name, "@takana-labs/convolve-wasm", "package name");
+expectEqual(packageVersion, "0.1.1", "package version");
 expectEqual(
   packageManifest.repository?.url,
   "git+https://github.com/takana-labs/convolve-wasm.git",
@@ -55,7 +57,7 @@ const demoManifest = readJson("apps/demo/package.json");
 expectEqual(demoManifest.name, "@takana-labs/convolve-demo", "demo workspace name");
 expectEqual(
   demoManifest.dependencies?.["@takana-labs/convolve-wasm"],
-  "0.1.0",
+  packageVersion,
   "demo package dependency",
 );
 if (demoManifest.dependencies?.["@agunal/convolve-wasm"] !== undefined) {
@@ -65,7 +67,7 @@ if (demoManifest.dependencies?.["@agunal/convolve-wasm"] !== undefined) {
 const jsrManifest = readJson("packages/convolve-wasm/jsr.json");
 expectEqual(jsrManifest.$schema, "https://jsr.io/schema/config-file.v1.json", "JSR schema");
 expectEqual(jsrManifest.name, "@takana-labs/convolve-wasm", "JSR package name");
-expectEqual(jsrManifest.version, "0.1.0", "JSR package version");
+expectEqual(jsrManifest.version, packageVersion, "JSR package version");
 expectEqual(jsrManifest.exports, "./dist/index.js", "JSR default export");
 
 const publishInclude = jsrManifest.publish?.include;

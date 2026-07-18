@@ -8,7 +8,7 @@
 
 The public `CONVOLVE()` function validates the input object and options, then decodes A followed by B with a lazily created `OfflineAudioContext(2, 1, 48_000)`. Web Audio performs content sniffing and resampling. Mono data is copied into two independent planar `Float32Array`s; stereo channels remain discrete; decoded audio with more than two channels is rejected.
 
-The four channel buffers are transferred—not cloned—to one lazily created module worker. The control thread receives progress events and constructs the final `Blob` with MIME type `audio/wav`.
+After decode, the control thread creates a checked `MemoryPlan` from decoded frame counts, file sizes, options, and the reported `navigator.deviceMemory` class. Unsafe jobs return `INPUT_TOO_LARGE` before worker creation. Safe jobs transfer the four channel buffers—not clone them—to one lazily created module worker. The control thread receives progress events and constructs the final `Blob` with MIME type `audio/wav`.
 
 ### Module worker
 
@@ -62,7 +62,23 @@ Normalization is attenuation-only. A signal already at or below the requested ce
 
 ## Memory guard
 
-Requests are rejected before FFT/output allocation when this conservative estimate exceeds 268,435,456 bytes:
+v0.1.1 adds a post-decode, pre-worker browser guard. With `n = a + b - 1`, it estimates:
+
+```text
+decoded stereo D  = 8 * (a + b)
+forward audio F   = 8 * n
+final audio R     = 8 * finalFrames
+FFT workspace X   = 24 * nextPowerOfTwo(n)
+beat scratch P    = beat pan enabled ? 4 * n : 0
+WAV size W        = 44 + 6 * finalFrames
+encoded input E   = fileA.size + fileB.size
+runtime reserve   = 32 MiB
+estimated peak    = E + 3D + F + R + X + P + 4W + reserve
+```
+
+`finalFrames` is `n`, or `2n - crossfadeFrames` for reverse append. The browser budget is `clamp(deviceMemoryGiB * 48 MiB, 64 MiB, 384 MiB)`; a reported 4 GB device receives 192 MiB, while a reported 8 GB device or unknown desktop receives 384 MiB. Arithmetic is checked and saturates to rejection on overflow.
+
+The independent Rust/WASM guard remains unchanged and rejects before FFT/output allocation when its conservative estimate exceeds 268,435,456 bytes:
 
 ```text
 input bytes       = 2 * (a + b) * 4
@@ -70,10 +86,9 @@ forward output    = 2 * n * 4
 final output      = forward output, or 2 * (2*n - crossfade) * 4
 FFT working set   = 24 * checked_next_power_of_two(n)
 fixed headroom    = 16 MiB
-n                 = a + b - 1
 ```
 
-Every arithmetic operation is checked for overflow.
+Neither guard can be bypassed.
 
 ## Output
 

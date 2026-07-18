@@ -32,7 +32,7 @@ export default defineConfig({
     command:
       "npm run dev -w @takana-labs/convolve-demo -- --host 127.0.0.1 --port 4173",
     url: "http://127.0.0.1:4173",
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.CONVOLVE_REUSE_SERVER === "1",
     timeout: 120_000,
   },
 });
