@@ -6,3 +6,4 @@ playwright-report/
 test-results/
 blob-report/
 packages/convolve-wasm/src/wasm/
+app_work/
