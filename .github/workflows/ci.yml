@@ -2,19 +2,76 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  pages-preflight:
+    concurrency:
+      group: ci-preflight-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pages: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Collect GitHub Pages metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          collect() {
+            local endpoint="$1"
+            local destination="$2"
+            if ! timeout 20s gh api "$endpoint" > "$destination"; then
+              printf '{"_preflight_error":"GitHub API request failed for %s"}\n' "$endpoint" > "$destination"
+            fi
+          }
+          collect "repos/${GITHUB_REPOSITORY}/pages" "$RUNNER_TEMP/pages.json"
+          collect "repos/${GITHUB_REPOSITORY}" "$RUNNER_TEMP/repository.json"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Validate Node toolchain
+        run: npm run validate:toolchain
+
+      - name: Check synchronized site URL
+        run: npm run check:site-url
+
+      - name: Validate GitHub Pages settings
+        env:
+          PAGES_METADATA_PATH: ${{ runner.temp }}/pages.json
+          REPOSITORY_METADATA_PATH: ${{ runner.temp }}/repository.json
+        run: node scripts/pages-preflight.mjs
+
   verify:
+    needs: pages-preflight
+    concurrency:
+      group: ci-verify-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -50,6 +107,9 @@ jobs:
 
       - name: Validate repository links
         run: npm run validate:links
+
+      - name: Test site URL configuration
+        run: npm run test:site
 
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
@@ -95,7 +155,7 @@ jobs:
       - name: Test browser demo in Chromium and WebKit
         run: npm run test:e2e
 
-      - name: Test GitHub Pages subpath in Chromium
+      - name: Test GitHub Pages root and transfer paths in Chromium
         run: npm run test:pages
 
       - name: Upload GitHub Pages smoke diagnostics
@@ -121,3 +181,42 @@ jobs:
             echo "@ffmpeg/core must not be present" >&2
             exit 1
           fi
+
+      - name: Upload verified GitHub Pages artifact
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: apps/demo/dist
+
+  deploy:
+    needs: verify
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    concurrency:
+      group: pages-production
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy verified GitHub Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Verify deployed Pages SHA and assets
+        run: node scripts/public-site-smoke.mjs

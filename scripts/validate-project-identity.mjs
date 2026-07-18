@@ -2,8 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
+import { readSiteConfig } from "./site-config.mjs";
+
 const root = process.cwd();
 const failures = [];
+const siteConfig = readSiteConfig();
 
 function read(relativePath) {
   const absolutePath = path.join(root, relativePath);
@@ -43,7 +46,7 @@ expectEqual(
   "https://github.com/takana-labs/convolve-wasm/issues",
   "package issue tracker",
 );
-expectEqual(packageManifest.homepage, "https://convolve-wasm.app/", "package homepage");
+expectEqual(packageManifest.homepage, siteConfig.publicUrl, "package homepage");
 if (packageManifest.publishConfig !== undefined) {
   failures.push("npm publishConfig must be absent for the JSR-first package");
 }
@@ -80,10 +83,14 @@ if (!Array.isArray(publishExclude) || !publishExclude.includes("!dist")) {
 if (fs.existsSync(path.join(root, ".github/workflows/publish.yml"))) {
   failures.push("legacy npm workflow .github/workflows/publish.yml must be removed");
 }
+if (fs.existsSync(path.join(root, ".github/workflows/pages.yml"))) {
+  failures.push("redundant automatic Pages workflow .github/workflows/pages.yml must be removed");
+}
 read(".github/workflows/publish-jsr.yml");
 read("packages/convolve-wasm/LICENSE");
 
 const identityFiles = [
+  "site.config.json",
   "README.md",
   "package.json",
   "package-lock.json",
@@ -103,7 +110,6 @@ const identityFiles = [
   "docs/releases/v0.1.0.md",
   "crates/convolve-core/Cargo.toml",
   ".github/workflows/ci.yml",
-  ".github/workflows/pages.yml",
   ".github/workflows/release-candidate.yml",
   ".github/workflows/publish-jsr.yml",
 ];
@@ -133,4 +139,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("Project identity is aligned with takana-labs, JSR, and convolve-wasm.app.");
+console.log(`Project identity is aligned with takana-labs, JSR, and ${siteConfig.publicUrl}`);

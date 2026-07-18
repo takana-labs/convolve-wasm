@@ -8,7 +8,7 @@
 |---|---|
 | Repository | `takana-labs/convolve-wasm` |
 | JSR package | `@takana-labs/convolve-wasm@0.1.0` |
-| Canonical site | `https://convolve-wasm.app/` |
+| Canonical site | <!-- site-url:start -->`https://convolve-wasm.app/`<!-- site-url:end --> |
 | Registry authentication | GitHub Actions OIDC; no registry token |
 | Release tag | `v0.1.0` |
 | Generated WASM | Ignored in source; included only in built `dist` |
@@ -24,7 +24,7 @@ The registry migration does not alter the public API, the DSP order, the exact 2
 
 1. Transfer the repository without renaming it.
 2. Authorize the GitHub app and confirm organization Actions/Pages policy.
-3. Verify and configure `convolve-wasm.app` for GitHub Pages.
+3. Verify and configure the canonical site above for GitHub Pages.
 4. Link the reserved JSR package to `takana-labs/convolve-wasm`.
 5. Create a protected GitHub environment named `jsr` with the desired reviewer policy.
 
