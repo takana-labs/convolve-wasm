@@ -13,10 +13,26 @@ import {
 } from "./fixtures";
 
 const BROWSER_WAV_SHA256 = {
-  plain: "301846c1872c07cf8dbc71d62d524cd2a9c7aa3d9aab921ff8c475702b707a3c",
-  reverse: "85ba256457e2ec737e0418f31fdcd5347a8d92d1acc1b2b81d556fbd786b8074",
-  beatPan: "c393693260a14edf78536cb0535a439cd9a57c59f0520f2bc5270f2f58b06162",
+  chromium: {
+    plain: "58e72d8bb4e6585e26542dd164b44b7de7f2292973a4b9e4cfe5241df1facbc1",
+    reverse: "60c2feda7455b07bb6be150e009823056f415c8d19cbb44dbf4ed73451fe5b85",
+    beatPan: "8fced8928a444d6776a3962cdc63a4e406070ce43d12dc5c193af0b845fdb19d",
+  },
+  webkit: {
+    plain: "301846c1872c07cf8dbc71d62d524cd2a9c7aa3d9aab921ff8c475702b707a3c",
+    reverse: "85ba256457e2ec737e0418f31fdcd5347a8d92d1acc1b2b81d556fbd786b8074",
+    beatPan: "c393693260a14edf78536cb0535a439cd9a57c59f0520f2bc5270f2f58b06162",
+  },
 } as const;
+
+type GoldenMode = keyof (typeof BROWSER_WAV_SHA256)["chromium"];
+
+function expectedBrowserHash(browserName: string, mode: GoldenMode): string {
+  if (browserName !== "chromium" && browserName !== "webkit") {
+    throw new Error(`No browser WAV golden is defined for ${browserName}`);
+  }
+  return BROWSER_WAV_SHA256[browserName][mode];
+}
 
 function sha256(output: Uint8Array): string {
   return createHash("sha256").update(output).digest("hex");
@@ -89,6 +105,7 @@ function expectNoBrowserFailures(failures: BrowserFailures): void {
 }
 
 test("creates a playable PCM24 WAV with the full convolution length", async ({
+  browserName,
   page,
 }) => {
   const failures = watchFailures(page);
@@ -100,11 +117,12 @@ test("creates a playable PCM24 WAV with the full convolution length", async ({
     output,
     SOURCE_A_FRAMES + IMPULSE_RESPONSE_FRAMES - 1,
   );
-  expect(sha256(output)).toBe(BROWSER_WAV_SHA256.plain);
+  expect(sha256(output)).toBe(expectedBrowserHash(browserName, "plain"));
   expectNoBrowserFailures(failures);
 });
 
 test("appends an exact reverse using the default five-millisecond overlap", async ({
+  browserName,
   page,
 }) => {
   const failures = watchFailures(page);
@@ -115,11 +133,14 @@ test("appends an exact reverse using the default five-millisecond overlap", asyn
   const output = await runAndReadOutput(page);
   const forwardFrames = SOURCE_A_FRAMES + IMPULSE_RESPONSE_FRAMES - 1;
   expectPcm24WavLayout(output, 2 * forwardFrames - 240);
-  expect(sha256(output)).toBe(BROWSER_WAV_SHA256.reverse);
+  expect(sha256(output)).toBe(expectedBrowserHash(browserName, "reverse"));
   expectNoBrowserFailures(failures);
 });
 
-test("reports detected beats for a 120 BPM click track", async ({ page }) => {
+test("reports detected beats for a 120 BPM click track", async ({
+  browserName,
+  page,
+}) => {
   const failures = watchFailures(page);
   await page.goto("/");
   await setAudioFiles(page, makeClickTrackWav(), makeImpulseResponseWav());
@@ -133,7 +154,7 @@ test("reports detected beats for a 120 BPM click track", async ({ page }) => {
   const expectedFrames = CLICK_TRACK_FRAMES + IMPULSE_RESPONSE_FRAMES - 1;
   expect(expectedFrames).toBeGreaterThan(65_536);
   expectPcm24WavLayout(output, expectedFrames);
-  expect(sha256(output)).toBe(BROWSER_WAV_SHA256.beatPan);
+  expect(sha256(output)).toBe(expectedBrowserHash(browserName, "beatPan"));
   expectNoBrowserFailures(failures);
 });
 
