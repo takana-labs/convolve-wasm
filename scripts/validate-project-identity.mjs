@@ -37,7 +37,7 @@ function expectEqual(actual, expected, label) {
 const packageManifest = readJson("packages/convolve-wasm/package.json");
 const packageVersion = packageManifest.version;
 expectEqual(packageManifest.name, "@takana-labs/convolve-wasm", "package name");
-expectEqual(packageVersion, "0.1.1", "package version");
+expectEqual(packageVersion, "0.1.2", "package version");
 expectEqual(
   packageManifest.repository?.url,
   "git+https://github.com/takana-labs/convolve-wasm.git",
@@ -110,6 +110,11 @@ const identityFiles = [
   "docs/browser-support.md",
   "docs/release-readiness.md",
   "docs/releases/v0.1.0.md",
+  "docs/releases/v0.1.1.md",
+  "docs/releases/v0.1.2.md",
+  "docs/testing/2026-07-17-mobile-safe-rejection.md",
+  "docs/testing/2026-07-18-lower-memory-full-fft.md",
+  "scripts/verify-android-release-gate.mjs",
   "crates/convolve-core/Cargo.toml",
   ".github/workflows/ci.yml",
   ".github/workflows/release-candidate.yml",

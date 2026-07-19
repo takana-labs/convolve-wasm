@@ -18,8 +18,6 @@ const handleRequest = createWorkerRequestHandler({
   },
 });
 
-let queue = Promise.resolve();
 scope.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
-  if (event.data?.type !== "process") return;
-  queue = queue.then(() => handleRequest(event.data));
+  void handleRequest(event.data);
 });

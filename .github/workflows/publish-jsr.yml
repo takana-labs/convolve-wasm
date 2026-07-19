@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       publish_acknowledgement:
-        description: Type PUBLISH @takana-labs/convolve-wasm@0.1.1 TO JSR
+        description: Type PUBLISH @takana-labs/convolve-wasm@0.1.2 TO JSR
         required: true
         type: string
 
@@ -40,7 +40,7 @@ jobs:
           [[ "${{ inputs.artifact_run_id }}" =~ ^[0-9]+$ ]]
           [[ "${{ inputs.artifact_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
           test "${{ inputs.publish_acknowledgement }}" = \
-            'PUBLISH @takana-labs/convolve-wasm@0.1.1 TO JSR'
+            'PUBLISH @takana-labs/convolve-wasm@0.1.2 TO JSR'
 
       - name: Check out exact source commit
         uses: actions/checkout@v6
@@ -54,15 +54,18 @@ jobs:
           set -euo pipefail
           actual=$(git rev-parse HEAD)
           test "$actual" = "${{ inputs.source_commit }}"
-          git fetch --force origin refs/tags/v0.1.1:refs/tags/v0.1.1
-          test "$(git rev-list -n 1 v0.1.1)" = "$actual"
+          git fetch --force origin refs/tags/v0.1.2:refs/tags/v0.1.2
+          test "$(git rev-list -n 1 v0.1.2)" = "$actual"
           test -z "$(git status --porcelain)"
+
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Verify both physical Android release gates are complete
+        run: node scripts/verify-android-release-gate.mjs
 
       - name: Verify candidate workflow run
         shell: bash
@@ -93,14 +96,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive=release-artifact/convolve-wasm-jsr-0.1.1.tgz
+          archive=release-artifact/convolve-wasm-jsr-0.1.2.tgz
           test -f "$archive"
           (cd release-artifact && sha256sum --check SHA256SUMS)
           actual_hash=$(sha256sum "$archive" | awk '{print $1}')
           test "$actual_hash" = "${{ inputs.artifact_sha256 }}"
           grep -Fx "source_commit=${{ inputs.source_commit }}" \
             release-artifact/RELEASE-METADATA.txt
-          grep -Fx 'package=@takana-labs/convolve-wasm@0.1.1' \
+          grep -Fx 'package=@takana-labs/convolve-wasm@0.1.2' \
             release-artifact/RELEASE-METADATA.txt
 
           rm -rf release-package
@@ -113,10 +116,10 @@ jobs:
           const pkg = JSON.parse(fs.readFileSync('release-package/package/package.json', 'utf8'));
           const failures = [];
           if (jsr.name !== '@takana-labs/convolve-wasm') failures.push('unexpected JSR package name');
-          if (jsr.version !== '0.1.1') failures.push('unexpected JSR package version');
+          if (jsr.version !== '0.1.2') failures.push('unexpected JSR package version');
           if (jsr.exports !== './dist/index.js') failures.push('unexpected JSR export');
           if (pkg.name !== '@takana-labs/convolve-wasm') failures.push('unexpected package name');
-          if (pkg.version !== '0.1.1') failures.push('unexpected package version');
+          if (pkg.version !== '0.1.2') failures.push('unexpected package version');
           if (pkg.repository?.url !== 'git+https://github.com/takana-labs/convolve-wasm.git') failures.push('repository mismatch');
           if (failures.length) throw new Error(failures.join('\n'));
           NODE

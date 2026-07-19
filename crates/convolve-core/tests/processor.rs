@@ -1,6 +1,7 @@
 use convolve_core::{
-    BeatPanSource, MAX_BYTES, ProcessOptions, ProcessStage, SAMPLE_RATE, StereoAudio,
-    convolution_frames, estimate_peak_bytes, process, process_with_progress,
+    BeatPanSource, ConvolveCoreError, MAX_BYTES, ProcessOptions, ProcessStage, SAMPLE_RATE,
+    StereoAudio, convolution_frames, estimate_peak_bytes, process, process_session_with_progress,
+    process_with_progress,
 };
 
 #[test]
@@ -57,6 +58,32 @@ fn validates_option_ranges() {
 fn estimates_small_request_below_limit() {
     let estimate = estimate_peak_bytes(48_000, 24_000, false, 240).unwrap();
     assert!(estimate < MAX_BYTES);
+}
+
+#[test]
+fn whole_wav_guard_accounts_for_the_retained_and_copied_output() {
+    let plain = estimate_peak_bytes(48_000, 24_000, false, 0).unwrap();
+    let reverse = estimate_peak_bytes(48_000, 24_000, true, 240).unwrap();
+    assert_eq!(plain, 22_725_492);
+    assert_eq!(reverse, 23_586_600);
+    assert!(reverse > plain);
+}
+#[test]
+fn whole_wav_guard_rejects_a_large_reverse_job_before_streaming_exists() {
+    // The reduced future streaming workspace fits within 256 MiB for this job,
+    // but the current one-shot WASM result retains and then copies the complete
+    // reverse WAV. The active guard must reject it until output is pull-based.
+    let reduced_streaming_workspace = 182_226_936;
+    assert!(reduced_streaming_workspace < MAX_BYTES);
+
+    let error = estimate_peak_bytes(2_000_000, 2_000_000, true, 240).unwrap_err();
+    assert!(matches!(
+        error,
+        ConvolveCoreError::InputTooLarge {
+            estimated: 278_224_168,
+            limit: MAX_BYTES
+        }
+    ));
 }
 
 #[test]
@@ -246,6 +273,38 @@ fn processor_reports_only_the_stages_it_executes_in_order() {
             ProcessStage::Normalize,
             ProcessStage::Encode,
             ProcessStage::Done,
+        ]
+    );
+}
+
+#[test]
+fn streaming_session_chunks_reassemble_to_legacy_wav_without_encode_progress() {
+    let a = StereoAudio::new(SAMPLE_RATE, vec![1.0, 0.25, -0.5], vec![-0.25, 0.5, 1.0]).unwrap();
+    let b = impulse();
+    let mut stages = Vec::new();
+    let session = process_session_with_progress(&a, &b, true, ProcessOptions::default(), |stage| {
+        stages.push(stage)
+    })
+    .unwrap();
+    let mut streamed = session.wav_header().unwrap().to_vec();
+    let frames = session.metadata().output_frames;
+    for offset in (0..frames).step_by(2) {
+        streamed.extend(
+            session
+                .pcm24_chunk(offset, (frames - offset).min(2))
+                .unwrap(),
+        );
+    }
+    let legacy = process(&a, &b, true, ProcessOptions::default()).unwrap();
+    assert_eq!(streamed, legacy.wav_bytes);
+    assert_eq!(session.metadata(), &legacy.metadata);
+    assert_eq!(
+        stages,
+        vec![
+            ProcessStage::Validate,
+            ProcessStage::Convolve,
+            ProcessStage::AppendReverse,
+            ProcessStage::Normalize
         ]
     );
 }

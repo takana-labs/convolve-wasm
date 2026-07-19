@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@takana-labs/convolve-wasm": "0.1.1"
+    "@takana-labs/convolve-wasm": "0.1.2"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
