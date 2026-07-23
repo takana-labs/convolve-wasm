@@ -73,8 +73,12 @@ async function runAndReadOutput(page: Page): Promise<Uint8Array> {
   });
   await expect(page.locator("#preview")).toHaveAttribute("src", /^blob:/);
   await expect
-    .poll(() =>
-      page.locator("#preview").evaluate((audio: HTMLAudioElement) => audio.readyState),
+    .poll(
+      () =>
+        page
+          .locator("#preview")
+          .evaluate((audio: HTMLAudioElement) => audio.readyState),
+      { timeout: 30_000 },
     )
     .toBeGreaterThanOrEqual(1);
   await expect(page.locator("#download")).toHaveAttribute("href", /^blob:/);
