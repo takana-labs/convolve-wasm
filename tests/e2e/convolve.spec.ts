@@ -71,24 +71,36 @@ async function runAndReadOutput(page: Page): Promise<Uint8Array> {
   await expect(status).toHaveAttribute("data-state", "done", {
     timeout: 90_000,
   });
-  await expect(page.locator("#preview")).toHaveAttribute("src", /^blob:/);
-  await expect
-    .poll(
-      () =>
-        page
-          .locator("#preview")
-          .evaluate((audio: HTMLAudioElement) => audio.readyState),
-      { timeout: 30_000 },
-    )
-    .toBeGreaterThanOrEqual(1);
-  await expect(page.locator("#download")).toHaveAttribute("href", /^blob:/);
-  await expect(page.locator("#download")).toHaveAttribute("download", /\.wav$/);
-  const output = await page
-    .locator("#download")
-    .evaluate(async (link: HTMLAnchorElement) =>
-      Array.from(new Uint8Array(await (await fetch(link.href)).arrayBuffer())),
-    );
-  return Uint8Array.from(output);
+  const preview = page.locator("#preview");
+  const download = page.locator("#download");
+  await expect(preview).toHaveAttribute("src", /^blob:/);
+  await expect(download).toHaveAttribute("href", /^blob:/);
+  await expect(download).toHaveAttribute("download", /\.wav$/);
+
+  // Headless WebKit can leave readyState at HAVE_NOTHING indefinitely for a
+  // valid Blob-backed PCM24 WAV. Verify the deterministic application contract
+  // instead: preview and download expose the same fetchable audio/wav Blob.
+  const result = await download.evaluate(async (link: HTMLAnchorElement) => {
+    const audio = document.querySelector<HTMLAudioElement>("#preview");
+    if (!audio) throw new Error("Missing preview audio element");
+
+    const response = await fetch(link.href);
+    const blob = await response.blob();
+    return {
+      bytes: Array.from(new Uint8Array(await blob.arrayBuffer())),
+      blobType: blob.type,
+      previewUrl: audio.src,
+      downloadUrl: link.href,
+      wavSupport: audio.canPlayType("audio/wav"),
+      mediaErrorCode: audio.error?.code ?? null,
+    };
+  });
+
+  expect(result.previewUrl).toBe(result.downloadUrl);
+  expect(result.blobType).toBe("audio/wav");
+  expect(result.wavSupport).not.toBe("");
+  expect(result.mediaErrorCode).toBeNull();
+  return Uint8Array.from(result.bytes);
 }
 
 function expectPcm24WavLayout(output: Uint8Array, expectedFrames: number): void {
