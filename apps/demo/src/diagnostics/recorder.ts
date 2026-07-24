@@ -96,7 +96,7 @@ type MarkerMigration =
 const INFERENCE_STATEMENT =
   "A prior active marker was found; this does not establish out-of-memory or any exact cause.";
 const EXPORT_NOTICE =
-  "Local diagnostic checkpoints only. Unexpected termination is inferred and does not identify an exact cause.";
+  "Local diagnostic checkpoints only. Unexpected termination is an inference and does not identify an exact cause.";
 const encoder = new TextEncoder();
 
 export class DiagnosticRecorder {
