@@ -76,8 +76,9 @@ export type DiagnosticObserver = (event: ConvolveDiagnosticEvent) => void;
 const MAX_INPUT_TEXT = 4_096;
 const MAX_ERROR_TEXT = 512;
 const MAX_SHORT_TEXT = 120;
-const QUOTED_FILE_NAME = /(["'])[^"'<>\r\n]+\.[A-Za-z][A-Za-z0-9]{0,15}\1/gu;
-const FILE_NAME_TOKEN = /(^|[\s("'=])[^\s"'<>\\/:]+\.[A-Za-z][A-Za-z0-9]{0,15}\b/gu;
+const AUDIO_FILE_EXTENSION = /\.(?:wav|m4a)\b/iu;
+const QUOTED_FILE_NAME = /(["'])[^"'<>\r\n]+\.[A-Za-z0-9]{1,16}\1/gu;
+const FILE_NAME_TOKEN = /(^|[\s("'=])[^\s"'<>\\/:]+\.[A-Za-z0-9]{1,16}\b/gu;
 const BLOB_URL = /\bblob:[^\s"'<>]+/giu;
 const HTTP_URL = /\bhttps?:\/\/[^\s"'<>]+/giu;
 const SOURCE_URL = /\b[A-Za-z][A-Za-z0-9+.-]*:(?=[^\s"'<>])[^\s"'<>]*/gu;
@@ -123,7 +124,7 @@ function own(value: unknown, key: string): unknown {
 function sanitizeSensitiveText(value: unknown): string {
   const text = typeof value === "string" ? value : "";
   if (text.length > MAX_INPUT_TEXT) return "[redacted-oversized-text]";
-  return text
+  const locationRedacted = text
     .replace(BLOB_URL, "[redacted-blob-url]")
     .replace(WINDOWS_PATH, "[redacted-path]")
     .replace(HTTP_URL, "[redacted-source-url]")
@@ -132,7 +133,11 @@ function sanitizeSensitiveText(value: unknown): string {
     .replace(UNC_PATH, "[redacted-path]")
     .replace(RELATIVE_PATH, "$1[redacted-path]")
     .replace(SEPARATOR_PATH, "$1[redacted-path]")
-    .replace(POSIX_PATH, "$1[redacted-path]")
+    .replace(POSIX_PATH, "$1[redacted-path]");
+  if (AUDIO_FILE_EXTENSION.test(locationRedacted)) {
+    return "[redacted-audio-file-message]";
+  }
+  return locationRedacted
     .replace(QUOTED_FILE_NAME, "[redacted-file-name]")
     .replace(FILE_NAME_TOKEN, "$1[redacted-file-name]")
     .replace(/[\u0000-\u001f\u007f]/gu, " ")

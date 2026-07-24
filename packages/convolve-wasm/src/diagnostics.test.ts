@@ -124,6 +124,32 @@ describe("private diagnostic events", () => {
       expect(json).not.toContain(secret);
     }
   });
+
+  it.each([
+    [
+      "multi-word audio filename",
+      "Could not decode private secret.wav",
+      ["private", "secret.wav"],
+    ],
+    [
+      "numeric-leading filename extension",
+      "Could not unpack archive.7z",
+      ["archive.7z"],
+    ],
+  ])("redacts every sentinel in %s", (_label, message, sentinels) => {
+    const sanitized = JSON.stringify(safeDiagnosticError({ message }));
+
+    for (const sentinel of sentinels) {
+      expect(sanitized).not.toContain(sentinel);
+    }
+  });
+
+  it("preserves a diagnostic category that contains no filename", () => {
+    expect(
+      safeDiagnosticError({ message: "WAV decoder unavailable" }),
+    ).toEqual({ message: "WAV decoder unavailable" });
+  });
+
   it("uses only the private event union", () => {
     const event: ConvolveDiagnosticEvent = {
       type: "memory-plan",
