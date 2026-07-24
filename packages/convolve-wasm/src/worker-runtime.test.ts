@@ -71,17 +71,21 @@ describe("worker request runtime", () => {
     expect(loadWasm).toHaveBeenCalledTimes(1);
     expect(processAudio).toHaveBeenCalledTimes(2);
     expect(free).toHaveBeenCalledTimes(2);
-    expect(posts[0]?.response).toEqual({
-      type: "progress",
-      id: "one",
-      event: { stage: "load-wasm", fraction: 0.25 },
-    });
-    expect(posts[1]?.response).toEqual({
+    expect(posts.slice(0, 3).map(({ response }) => response)).toEqual([
+      {
+        type: "progress",
+        id: "one",
+        event: { stage: "load-wasm", fraction: 0.25 },
+      },
+      { type: "diagnostic", id: "one", event: { type: "wasm-init-start" } },
+      { type: "diagnostic", id: "one", event: { type: "wasm-init-success" } },
+    ]);
+    expect(posts[3]?.response).toEqual({
       type: "progress",
       id: "one",
       event: { stage: "validate", fraction: 0.3 },
     });
-    const firstResult = posts[2];
+    const firstResult = posts[4];
     expect(firstResult?.response).toMatchObject({
       type: "result",
       id: "one",
@@ -130,19 +134,29 @@ describe("worker request runtime", () => {
     const initPosts: WorkerResponse[] = [];
     const initFailure = createWorkerRequestHandler({
       loadWasm: async () => {
-        throw new Error("network blocked");
+        throw new Error("failed C:\\private\\core.wasm");
       },
       postMessage: (response) => initPosts.push(response),
     });
     await initFailure(request("init"));
-    expect(initPosts.at(-1)).toEqual({
-      type: "error",
-      id: "init",
-      error: {
-        code: "WASM_INIT_FAILED",
-        message: "network blocked",
+    expect(initPosts.slice(-2)).toEqual([
+      {
+        type: "diagnostic",
+        id: "init",
+        event: {
+          type: "wasm-init-failure",
+          error: { message: "failed [redacted-path]" },
+        },
       },
-    });
+      {
+        type: "error",
+        id: "init",
+        error: {
+          code: "WASM_INIT_FAILED",
+          message: "failed C:\\private\\core.wasm",
+        },
+      },
+    ]);
   });
 
   it("copies input into a two-phase job, releases request channels, and streams one transferred chunk", async () => {

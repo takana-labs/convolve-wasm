@@ -1,4 +1,9 @@
 import type { DecodedInputPair, DecodedStereoAudio } from "./decode";
+import {
+  notifyDiagnostic,
+  safeDiagnosticError,
+  type DiagnosticObserver,
+} from "./diagnostics";
 import { ConvolveError } from "./errors";
 import type { NormalizedConvolveOptions } from "./options";
 import type {
@@ -24,6 +29,10 @@ export interface WorkerLike {
     type: "error",
     listener: (event: ErrorEvent) => void,
   ): void;
+  addEventListener(
+    type: "messageerror",
+    listener: (event: MessageEvent<unknown>) => void,
+  ): void;
   terminate?(): void;
 }
 
@@ -36,12 +45,17 @@ interface PendingRequest {
   output?: OutputAssembly;
 }
 
+type OutputMilestone = 0.25 | 0.5 | 0.75;
+
 interface OutputAssembly {
   metadata: ConvolveMetadata;
   controller: ReadableStreamDefaultController<Uint8Array>;
   blob: Promise<Blob>;
   sequence: number;
   offset: number;
+  chunkCount: number;
+  pcmBytes: number;
+  nextMilestone: OutputMilestone | null;
 }
 
 function defaultWorkerFactory(): WorkerLike {
@@ -190,6 +204,7 @@ export class WorkerClient {
 
   constructor(
     private readonly workerFactory: WorkerFactory = defaultWorkerFactory,
+    private readonly diagnostics?: DiagnosticObserver,
   ) {}
 
   process(
@@ -250,20 +265,45 @@ export class WorkerClient {
       if (this.worker !== worker) return;
 
       const message = event.message || "The processing worker failed";
+      const error = new ConvolveError("PROCESSING_FAILED", message, {
+        fileName: event.filename,
+        lineNumber: event.lineno,
+        columnNumber: event.colno,
+      });
       this.worker = undefined;
       try {
         worker.terminate?.();
       } finally {
-        this.rejectAll(
-          new ConvolveError("PROCESSING_FAILED", message, {
-            fileName: event.filename,
-            lineNumber: event.lineno,
-            columnNumber: event.colno,
-          }),
-        );
+        this.rejectAll(error);
       }
+      notifyDiagnostic(this.diagnostics, {
+        type: "worker-error",
+        error: safeDiagnosticError({
+          name: error.name,
+          code: error.code,
+          message: error.message,
+          lineNumber: event.lineno,
+          columnNumber: event.colno,
+        }),
+      });
+    });
+    worker.addEventListener("messageerror", () => {
+      if (this.worker !== worker) return;
+
+      const message = "The processing worker emitted an unreadable message";
+      this.worker = undefined;
+      try {
+        worker.terminate?.();
+      } finally {
+        this.rejectAll(new ConvolveError("PROCESSING_FAILED", message));
+      }
+      notifyDiagnostic(this.diagnostics, {
+        type: "worker-messageerror",
+        error: safeDiagnosticError({ name: "DataCloneError", message }),
+      });
     });
     this.worker = worker;
+    notifyDiagnostic(this.diagnostics, { type: "worker-created" });
     return worker;
   }
 
@@ -291,6 +331,9 @@ export class WorkerClient {
 
     try {
       switch (response.type) {
+        case "diagnostic":
+          notifyDiagnostic(this.diagnostics, response.event);
+          break;
         case "progress":
           pending.onProgress?.(response.event);
           break;
@@ -349,7 +392,14 @@ export class WorkerClient {
       blob,
       sequence: 0,
       offset: 0,
+      chunkCount: 0,
+      pcmBytes: 0,
+      nextMilestone: 0.25,
     };
+    notifyDiagnostic(this.diagnostics, {
+      type: "output-start",
+      outputFrames: response.metadata.outputFrames,
+    });
     this.pull(id, pending.output);
   }
 
@@ -376,6 +426,21 @@ export class WorkerClient {
     output.controller.enqueue(new Uint8Array(response.pcm));
     output.sequence += 1;
     output.offset += response.frames;
+    output.chunkCount += 1;
+    output.pcmBytes += response.pcm.byteLength;
+    while (
+      output.nextMilestone !== null &&
+      output.offset >= output.metadata.outputFrames * output.nextMilestone
+    ) {
+      const fraction = output.nextMilestone;
+      notifyDiagnostic(this.diagnostics, {
+        type: "output-milestone",
+        fraction,
+        chunkCount: output.chunkCount,
+        pcmBytes: output.pcmBytes,
+      });
+      output.nextMilestone = followingMilestone(fraction);
+    }
     if (output.offset < output.metadata.outputFrames) {
       this.pull(id, output);
     }
@@ -408,7 +473,15 @@ export class WorkerClient {
     output.controller.close();
     this.pending.delete(id);
     void output.blob.then(
-      (wav) => pending.resolve({ wav, metadata: response.metadata }),
+      (wav) => {
+        notifyDiagnostic(this.diagnostics, {
+          type: "blob-complete",
+          chunkCount: output.chunkCount,
+          pcmBytes: output.pcmBytes,
+          wavBytes: wav.size,
+        });
+        pending.resolve({ wav, metadata: response.metadata });
+      },
       (cause) => pending.reject(cause),
     );
   }
@@ -440,6 +513,7 @@ export class WorkerClient {
   private postCancel(id: string): void {
     try {
       this.worker?.postMessage({ type: "cancel", id });
+      notifyDiagnostic(this.diagnostics, { type: "worker-cancelled" });
     } catch {
       // The terminal failure has already been reported.
     }
@@ -454,6 +528,19 @@ export class WorkerClient {
         this.pending.delete(id);
       }
     }
+  }
+}
+
+function followingMilestone(
+  milestone: OutputMilestone,
+): OutputMilestone | null {
+  switch (milestone) {
+    case 0.25:
+      return 0.5;
+    case 0.5:
+      return 0.75;
+    case 0.75:
+      return null;
   }
 }
 
