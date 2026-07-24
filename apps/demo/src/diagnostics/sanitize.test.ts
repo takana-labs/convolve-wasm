@@ -25,12 +25,23 @@ describe("diagnostic privacy filtering", () => {
     ["UNC path", "\\\\server\\private share\\mix final.wav", "server|private|share|mix|final"],
     ["relative path", "../private folder/mix final.wav", "private|folder|mix|final"],
     ["HTTPS source URL", "https://example.test/private-id", "example.test|private-id"],
+    ["bare separator path", "private/folder/secret.wav", "private|folder|secret"],
+    ["Windows slash path", "C:/Users/private/secret.wav", "C:|Users|private|secret"],
+    ["tilde path", "~/private/secret.wav", "private|secret"],
+    ["webpack source URL", "webpack://private/hidden-file", "private|hidden-file"],
+    ["data audio URL", "data:audio/wav;base64,ENCODED_AUDIO_BYTES", "audio/wav|ENCODED_AUDIO_BYTES"],
   ])("redacts %s", (_label, input, sentinels) => {
     const output = sanitizeSensitiveText(input);
     for (const sentinel of sentinels.split("|")) {
       expect(output).not.toContain(sentinel);
     }
     expect(output.length).toBeLessThanOrEqual(512);
+  });
+
+  it("bounds huge untrusted text before redaction", () => {
+    const output = sanitizeSensitiveText(`${"x".repeat(1_000_000)} secret.wav`);
+    expect(output.length).toBeLessThanOrEqual(512);
+    expect(output).not.toContain("secret.wav");
   });
 
   it("allows only approved error fields and never walks arbitrary data", () => {

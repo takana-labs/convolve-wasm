@@ -5,14 +5,17 @@ import type {
 } from "./model";
 
 const MAX_ERROR_TEXT = 512;
+const MAX_INPUT_TEXT = 4_096;
 const MAX_SHORT_TEXT = 120;
 const AUDIO_NAME = /(?:["'][^"'<>\r\n]+\.(?:wav|m4a)["'])|(?:^|[\s("'=])(?:[^\s"'<>\\/:]+(?:[ \t]+[^\s"'<>\\/:]+)*)\.(?:wav|m4a)\b/giu;
 const BLOB_URL = /\bblob:[^\s"'<>]+/giu;
 const HTTP_URL = /\bhttps?:\/\/[^\s"'<>]+/giu;
+const SOURCE_URL = /\b[A-Za-z][A-Za-z0-9+.-]*:(?=[^\s"'<>])[^\s"'<>]*/gu;
 const FILE_URL = /\bfile:\/\/[^\s"'<>]+/giu;
 const WINDOWS_PATH = /\b[A-Za-z]:\\[^\r\n"'<>]*/gu;
 const UNC_PATH = /\\\\[^\r\n"'<>]*/gu;
 const RELATIVE_PATH = /(^|[\s("'=])(?:\.\.?[\\/])[^\r\n"'<>]*/gu;
+const SEPARATOR_PATH = /(^|[\s("'=])(?:~[\\/]|(?:[^\s"'<>\\/:]+[\\/])+)[^\r\n"'<>]*/gu;
 const POSIX_PATH = /(^|[\s("'=])\/[^\r\n"'<>]*/gu;
 
 const ERROR_DETAIL_KEYS = [
@@ -39,14 +42,16 @@ const STAGES = new Set([
 ]);
 
 export function sanitizeSensitiveText(value: unknown): string {
-  const text = typeof value === "string" ? value : "";
+  const text = typeof value === "string" ? value.slice(0, MAX_INPUT_TEXT) : "";
   return text
     .replace(BLOB_URL, "[redacted-blob-url]")
     .replace(HTTP_URL, "[redacted-source-url]")
     .replace(FILE_URL, "[redacted-file-url]")
+    .replace(SOURCE_URL, "[redacted-url]")
     .replace(WINDOWS_PATH, "[redacted-path]")
     .replace(UNC_PATH, "[redacted-path]")
     .replace(RELATIVE_PATH, "$1[redacted-path]")
+    .replace(SEPARATOR_PATH, "$1[redacted-path]")
     .replace(POSIX_PATH, "$1[redacted-path]")
     .replace(AUDIO_NAME, "[redacted-audio-name]")
     .replace(/[\u0000-\u001f\u007f]/gu, " ")
@@ -104,7 +109,9 @@ function beatPan(value: unknown): "a" | "b" | null | undefined {
 
 function mimeType(value: unknown): string | undefined {
   if (value === "") return "";
-  const text = shortText(value);
+  const text = typeof value === "string"
+    ? value.slice(0, MAX_SHORT_TEXT).replace(/[\u0000-\u001f\u007f]/gu, " ").trim()
+    : undefined;
   return text !== undefined && MIME_TYPE.test(text) ? text : undefined;
 }
 
