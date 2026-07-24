@@ -5,6 +5,7 @@ import {
   DIAGNOSTIC_SCHEMA_VERSION,
   DIAGNOSTIC_STORE_KEY,
   type ActiveSessionMarker,
+  type DiagnosticCheckpointType,
   type DiagnosticEnvironment,
   type DiagnosticSession,
   type DiagnosticSessionStatus,
@@ -163,6 +164,99 @@ describe("DiagnosticRecorder", () => {
     )).toHaveLength(2);
   });
 
+  it("never persists caller-owned or sensitive runtime input data", () => {
+    const storage = new FakeStorage();
+    const recorder = makeRecorder(storage);
+    const privateSentinels = [
+      "PRIVATE_UNKNOWN_FIELD",
+      "PRIVATE_STACK",
+      "PRIVATE_BINARY",
+      "PRIVATE_FILE_NAME",
+      "PRIVATE_PATH_SEGMENT",
+      "PRIVATE_URL_SEGMENT",
+      "PRIVATE_AUDIO_SAMPLE",
+      "PRIVATE_ACCESSOR",
+    ];
+    const throwingUnknown = Object.defineProperty({}, "private", {
+      enumerable: true,
+      get() {
+        throw new Error("PRIVATE_ACCESSOR");
+      },
+    });
+    const runtimeInput = {
+      id: "private-safe",
+      app: {
+        version: "file:///PRIVATE_PATH_SEGMENT/private.wav",
+        buildCommit: 42,
+        unknown: "PRIVATE_UNKNOWN_FIELD",
+      },
+      environment: {
+        userAgent: "https://example.test/PRIVATE_URL_SEGMENT/private.wav",
+        platform: "C:\\PRIVATE_PATH_SEGMENT\\private.wav",
+        deviceMemoryGiB: -1,
+        hardwareConcurrency: Number.NaN,
+        capabilities: {
+          webAssembly: "yes",
+          worker: true,
+          offlineAudioContext: false,
+          readableStream: true,
+          responseBlob: true,
+          randomUUID: true,
+          localStorage: true,
+          clipboard: false,
+          unknown: "PRIVATE_UNKNOWN_FIELD",
+        },
+        fileName: "PRIVATE_FILE_NAME.wav",
+        stack: "PRIVATE_STACK",
+        samples: new Float32Array([0.123456]),
+        bytes: new TextEncoder().encode("PRIVATE_BINARY"),
+        audioData: { sample: "PRIVATE_AUDIO_SAMPLE" },
+        throwingUnknown,
+      },
+      inputs: [{
+        slot: "bad",
+        mimeType: "audio/private; name=PRIVATE_FILE_NAME.wav",
+        encodedBytes: -1,
+        fileName: "PRIVATE_FILE_NAME.wav",
+        bytes: new TextEncoder().encode("PRIVATE_BINARY"),
+      }],
+      options: {
+        appendReverse: "yes",
+        beatPan: "private",
+        panTransitionMs: -1,
+        reverseCrossfadeMs: -1,
+        targetDbtp: Number.NaN,
+        stack: "PRIVATE_STACK",
+      },
+      unknown: "PRIVATE_UNKNOWN_FIELD",
+    } as unknown as StartSessionInput;
+
+    expect(() => recorder.startSession(runtimeInput)).not.toThrow();
+    expect(() => recorder.checkpoint("error", {
+      source: "processing",
+      message: "C:\\PRIVATE_PATH_SEGMENT\\PRIVATE_FILE_NAME.wav",
+      stack: "PRIVATE_STACK",
+      bytes: new TextEncoder().encode("PRIVATE_BINARY"),
+    })).not.toThrow();
+
+    const raw = storage.getItem(DIAGNOSTIC_STORE_KEY) ?? "";
+    const exported = recorder.exportJson();
+    for (const sentinel of privateSentinels) {
+      expect(raw).not.toContain(sentinel);
+      expect(exported).not.toContain(sentinel);
+    }
+    const stored = JSON.parse(raw) as DiagnosticStore;
+    const [session] = stored.sessions;
+    expect(session?.environment).toMatchObject({
+      deviceMemoryGiB: null,
+      hardwareConcurrency: null,
+      capabilities: { webAssembly: false, worker: true },
+    });
+    expect(session?.checkpoints.length).toBeLessThanOrEqual(96);
+    expect(new TextEncoder().encode(JSON.stringify(session)).byteLength)
+      .toBeLessThanOrEqual(32_768);
+  });
+
   it.each([
     ["corrupt JSON", "{not-json", "recovered-corruption"],
     [
@@ -176,10 +270,74 @@ describe("DiagnosticRecorder", () => {
       "unsupported-schema",
     ],
   ])("recovers %s deterministically", (_label, raw, expectedState) => {
-    const storage = new FakeStorage({ [DIAGNOSTIC_STORE_KEY]: raw });
+    const storage = new FakeStorage({
+      [DIAGNOSTIC_STORE_KEY]: raw,
+      [DIAGNOSTIC_ACTIVE_KEY]: "{bad-marker",
+      unrelated: "keep",
+    });
     const recorder = makeRecorder(storage);
     expect(recorder.snapshot().storageState).toBe(expectedState);
     expect(recorder.snapshot().sessions).toEqual([]);
+    expect(storage.getItem(DIAGNOSTIC_STORE_KEY)).toBeNull();
+    expect(storage.getItem(DIAGNOSTIC_ACTIVE_KEY)).toBeNull();
+    expect(storage.getItem("unrelated")).toBe("keep");
+    expect(storage.operations).toContain(`remove:${DIAGNOSTIC_STORE_KEY}`);
+    expect(storage.operations).toContain(`remove:${DIAGNOSTIC_ACTIVE_KEY}`);
+  });
+
+  it("attempts both recorder-key resets and preserves corruption state when removal fails", () => {
+    const storage = new FakeStorage({
+      [DIAGNOSTIC_STORE_KEY]: "{not-json",
+      [DIAGNOSTIC_ACTIVE_KEY]: "{bad-marker",
+      unrelated: "keep",
+    }, { remove: "SecurityError" });
+    const recorder = makeRecorder(storage);
+    expect(recorder.snapshot().storageState).toBe("recovered-corruption");
+    expect(storage.operations.filter((operation) => operation.startsWith("remove:"))).toEqual([
+      `remove:${DIAGNOSTIC_STORE_KEY}`,
+      `remove:${DIAGNOSTIC_ACTIVE_KEY}`,
+    ]);
+    recorder.startSession(startInput("memory-after-reset-failure"));
+    expect(storage.getItem(DIAGNOSTIC_STORE_KEY)).toBe("{not-json");
+    expect(storage.getItem("unrelated")).toBe("keep");
+    expect(recorder.snapshot().storageState).toBe("recovered-corruption");
+  });
+
+  it("does not infer from a valid v1 marker paired with an unsupported ring", () => {
+    const storage = new FakeStorage({
+      [DIAGNOSTIC_STORE_KEY]: JSON.stringify({ schemaVersion: 99, sessions: [] }),
+      [DIAGNOSTIC_ACTIVE_KEY]: JSON.stringify(activeMarker()),
+    });
+    const recorder = makeRecorder(storage);
+    expect(recorder.snapshot()).toMatchObject({
+      storageState: "unsupported-schema",
+      sessions: [],
+      recoveredSessionId: null,
+    });
+    expect(storage.getItem(DIAGNOSTIC_STORE_KEY)).toBeNull();
+    expect(storage.getItem(DIAGNOSTIC_ACTIVE_KEY)).toBeNull();
+  });
+
+  it.each([
+    ["corrupt", "{not-json", "recovered-corruption"],
+    [
+      "unsupported",
+      JSON.stringify({ schemaVersion: 99, sessionId: "future" }),
+      "unsupported-schema",
+    ],
+  ])("classifies and removes a %s active marker", (_label, rawMarker, expectedState) => {
+    const initialStore = JSON.stringify({
+      schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+      sessions: [],
+    });
+    const storage = new FakeStorage({
+      [DIAGNOSTIC_STORE_KEY]: initialStore,
+      [DIAGNOSTIC_ACTIVE_KEY]: rawMarker,
+    });
+    const recorder = makeRecorder(storage);
+    expect(recorder.snapshot().storageState).toBe(expectedState);
+    expect(storage.getItem(DIAGNOSTIC_STORE_KEY)).toBe(initialStore);
+    expect(storage.getItem(DIAGNOSTIC_ACTIVE_KEY)).toBeNull();
   });
 
   it("falls back to current-tab memory when storage access is disabled", () => {
@@ -239,6 +397,9 @@ describe("DiagnosticRecorder", () => {
     });
     expect(recorder.snapshot().sessions[0]?.inference?.statement.toLowerCase())
       .toContain("does not establish out-of-memory or any exact cause");
+    expect(recorder.snapshot().sessions[0]?.checkpoints.some(
+      (checkpoint) => isTerminalCheckpoint(checkpoint.type),
+    )).toBe(false);
     expect(storage.getItem(DIAGNOSTIC_ACTIVE_KEY)).toBeNull();
   });
 
@@ -248,8 +409,17 @@ describe("DiagnosticRecorder", () => {
       const recorder = makeRecorder(seedActiveSession({ status, terminal: true }));
       expect(recorder.snapshot().sessions[0]?.status).toBe(status);
       expect(recorder.snapshot().recoveredSessionId).toBeNull();
+      expect(recorder.snapshot().sessions[0]?.checkpoints.some(
+        (checkpoint) => isTerminalCheckpoint(checkpoint.type),
+      )).toBe(true);
     },
   );
+
+  it("does not infer when an active-status record already has a terminal checkpoint", () => {
+    const recorder = makeRecorder(seedActiveSession({ status: "active", terminal: true }));
+    expect(recorder.snapshot().sessions[0]?.status).toBe("active");
+    expect(recorder.snapshot().recoveredSessionId).toBeNull();
+  });
 
   it("creates an explicitly limited marker-only inference after ring corruption", () => {
     const recorder = makeRecorder(seedMarkerWithCorruptRing());
@@ -259,6 +429,25 @@ describe("DiagnosticRecorder", () => {
     });
     expect(recorder.snapshot().sessions[0]?.inference?.statement.toLowerCase())
       .toContain("does not establish out-of-memory or any exact cause");
+  });
+
+  it("retains a marker-only recovered subject when the ring already has six sessions", () => {
+    const sessions = Array.from(
+      { length: 6 },
+      (_, index) => terminalSession(`retained-${index}`, "succeeded", index + 1_000),
+    );
+    const storage = new FakeStorage({
+      [DIAGNOSTIC_STORE_KEY]: JSON.stringify({
+        schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+        sessions,
+      }),
+      [DIAGNOSTIC_ACTIVE_KEY]: JSON.stringify(activeMarker("marker-only")),
+    });
+    const recorder = makeRecorder(storage);
+    expect(recorder.snapshot().recoveredSessionId).toBe("marker-only");
+    expect(recorder.snapshot().sessions).toHaveLength(6);
+    expect(recorder.snapshot().sessions.map((session) => session.id))
+      .toContain("marker-only");
   });
 
   it("coalesces repeated progress fractions to one persisted stage transition", () => {
@@ -323,6 +512,39 @@ describe("DiagnosticRecorder", () => {
       recorder.finish("succeeded", "success", { outputFrames: 1 });
     }).not.toThrow();
     expect(recorder.snapshot().sessions.at(-1)?.status).toBe("succeeded");
+  });
+
+  it("isolates throwing runtime accessors and allows a subsequent normal operation", () => {
+    const recorder = makeRecorder(new FakeStorage());
+    const throwingInput = new Proxy({}, {
+      get() {
+        throw new Error("input getter");
+      },
+      getOwnPropertyDescriptor() {
+        throw new Error("input descriptor");
+      },
+    }) as StartSessionInput;
+    const throwingDetails = new Proxy({}, {
+      get() {
+        throw new Error("details getter");
+      },
+      getOwnPropertyDescriptor() {
+        throw new Error("details descriptor");
+      },
+    });
+    expect(() => recorder.startSession(throwingInput)).not.toThrow();
+    expect(() => recorder.checkpoint("error", throwingDetails)).not.toThrow();
+    expect(() => recorder.recordIncident("worker-error", throwingDetails)).not.toThrow();
+    expect(() => recorder.recordProgress(throwingDetails as never)).not.toThrow();
+
+    expect(() => {
+      recorder.startSession(startInput("after-throwing-input"));
+      recorder.finish("succeeded", "success", { outputFrames: 1 });
+    }).not.toThrow();
+    expect(recorder.snapshot().sessions.at(-1)).toMatchObject({
+      id: "after-throwing-input",
+      status: "succeeded",
+    });
   });
 
   it("isolates throwing subscribers and deferred notifications", () => {
@@ -450,6 +672,16 @@ function seedActiveSession(input: {
       : input.status,
   );
   session.status = input.status;
+  if (input.terminal) {
+    const type = terminalCheckpointType(input.status);
+    session.checkpoints.push({
+      sequence: 1,
+      type,
+      timestamp: session.updatedAt,
+      elapsedMs: 1,
+      details: type === "error" ? { source: "processing" } : {},
+    });
+  }
   return new FakeStorage({
     [DIAGNOSTIC_STORE_KEY]: JSON.stringify({
       schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
@@ -464,6 +696,22 @@ function seedMarkerWithCorruptRing(): FakeStorage {
     [DIAGNOSTIC_STORE_KEY]: "{not-json",
     [DIAGNOSTIC_ACTIVE_KEY]: JSON.stringify(activeMarker()),
   });
+}
+
+function terminalCheckpointType(status: DiagnosticSessionStatus): DiagnosticCheckpointType {
+  switch (status) {
+    case "failed": return "error";
+    case "cancelled": return "cancelled";
+    case "active": return "clean-shutdown";
+    case "clean-shutdown": return "clean-shutdown";
+    case "unexpected-termination": return "unexpected-termination";
+    case "succeeded": return "success";
+  }
+}
+
+function isTerminalCheckpoint(type: DiagnosticCheckpointType): boolean {
+  return type === "success" || type === "error" || type === "cancelled" ||
+    type === "clean-shutdown";
 }
 
 function quotaStorageWithExistingSessions(count: number): SessionQuotaStorage {

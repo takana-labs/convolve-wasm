@@ -17,7 +17,7 @@ import {
   type DiagnosticStorageState,
   type DiagnosticStore,
 } from "./model";
-import { sanitizeCheckpointDetails } from "./sanitize";
+import { sanitizeCheckpointDetails, sanitizeSensitiveText } from "./sanitize";
 
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -81,6 +81,18 @@ const TERMINAL_STATUSES = new Set<DiagnosticSessionStatus>([
   "clean-shutdown",
   "unexpected-termination",
 ]);
+const TERMINAL_CHECKPOINT_TYPES = new Set<DiagnosticCheckpointType>([
+  "success",
+  "error",
+  "cancelled",
+  "clean-shutdown",
+]);
+type StoreLoadKind = "ok" | "corrupt" | "unsupported";
+type MarkerMigration =
+  | { kind: "none" }
+  | { kind: "ok"; marker: ActiveSessionMarker }
+  | { kind: "corrupt" }
+  | { kind: "unsupported" };
 const INFERENCE_STATEMENT =
   "A prior active marker was found; this does not establish out-of-memory or any exact cause.";
 const EXPORT_NOTICE =
@@ -102,9 +114,12 @@ export class DiagnosticRecorder {
   }
 
   startSession(input: StartSessionInput): string {
-    const id = this.safeSessionId(input.id);
+    const requestedId = ownData(input, "id");
+    const id = this.safeSessionId(typeof requestedId === "string" ? requestedId : undefined);
     try {
       const startedAt = this.safeNow();
+      const app = safeApp(ownData(input, "app"));
+      const environment = safeEnvironment(ownData(input, "environment"));
       this.activeStartedMonotonic = this.safeMonotonicNow();
       this.lastProgressStage = null;
 
@@ -114,32 +129,29 @@ export class DiagnosticRecorder {
         startedAt,
         updatedAt: startedAt,
         status: "active",
-        app: {
-          version: input.app.version,
-          buildCommit: input.app.buildCommit,
-        },
-        environment: input.environment,
+        app,
+        environment,
         checkpoints: [],
         droppedCheckpoints: 0,
       };
       this.appendToSession(session, "session-start", {
-        appVersion: input.app.version,
-        buildCommit: input.app.buildCommit,
+        appVersion: app.version,
+        buildCommit: app.buildCommit,
         diagnosticSchemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
-        userAgent: input.environment.userAgent,
-        platform: input.environment.platform,
-        deviceMemoryGiB: input.environment.deviceMemoryGiB,
-        hardwareConcurrency: input.environment.hardwareConcurrency,
-        ...input.environment.capabilities,
+        userAgent: environment.userAgent,
+        platform: environment.platform,
+        deviceMemoryGiB: environment.deviceMemoryGiB,
+        hardwareConcurrency: environment.hardwareConcurrency,
+        ...environment.capabilities,
       });
-      for (const inputDetails of input.inputs.slice(0, 2)) {
-        this.appendToSession(session, "input", inputDetails);
+      for (const inputDetails of firstTwo(ownData(input, "inputs"))) {
+        this.appendToSession(session, "input", safeInputDetails(inputDetails));
       }
-      this.appendToSession(session, "options", input.options);
+      this.appendToSession(session, "options", ownData(input, "options"));
 
       const validated = reconstructSession(session);
       this.sessions = this.sessions.filter((candidate) => candidate.id !== id);
-      this.sessions.push(validated ?? session);
+      this.sessions.push(validated ?? minimalSession(id, startedAt, app));
       this.activeSessionId = id;
       this.sortAndRetain();
       this.persistRing();
@@ -296,41 +308,77 @@ export class DiagnosticRecorder {
       return;
     }
 
-    if (rawStore !== null) this.loadStore(rawStore);
-    const marker = parseJsonMarker(rawMarker);
-    if (rawMarker !== null && marker === null) {
-      this.removeActiveMarker();
+    const storeKind = rawStore === null ? "ok" : this.loadStore(rawStore);
+    const markerMigration = migrateMarker(rawMarker);
+    if (storeKind !== "ok") {
+      this.storageState = storeKind === "unsupported"
+        ? "unsupported-schema"
+        : "recovered-corruption";
+      this.resetRecorderKeys();
+      if (storeKind === "corrupt" && markerMigration.kind === "ok") {
+        this.recover(markerMigration.marker, true);
+      }
       return;
     }
-    if (marker) this.recover(marker);
+
+    if (markerMigration.kind === "corrupt") {
+      this.storageState = "recovered-corruption";
+      this.discardActiveMarkerPreservingState();
+      return;
+    }
+    if (markerMigration.kind === "unsupported") {
+      this.storageState = "unsupported-schema";
+      this.discardActiveMarkerPreservingState();
+      return;
+    }
+    if (markerMigration.kind === "ok") this.recover(markerMigration.marker);
   }
 
-  private loadStore(raw: string): void {
+  private loadStore(raw: string): StoreLoadKind {
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
     } catch {
-      this.storageState = "recovered-corruption";
-      return;
+      return "corrupt";
     }
     const migration = migrateDiagnosticStore(parsed);
-    if (migration.kind === "unsupported") {
-      this.storageState = "unsupported-schema";
-      return;
-    }
-    if (migration.kind === "corrupt") {
-      this.storageState = "recovered-corruption";
-      return;
-    }
+    if (migration.kind === "unsupported") return "unsupported";
+    if (migration.kind === "corrupt") return "corrupt";
     this.sessions = migration.store.sessions;
     for (const session of this.sessions) this.boundSession(session);
     this.sortAndRetain();
+    return "ok";
   }
 
-  private recover(marker: ActiveSessionMarker): void {
+  private resetRecorderKeys(): void {
+    const storage = this.storage;
+    if (!storage) return;
+    let failed = false;
+    for (const key of [DIAGNOSTIC_STORE_KEY, DIAGNOSTIC_ACTIVE_KEY]) {
+      try {
+        storage.removeItem(key);
+      } catch {
+        failed = true;
+      }
+    }
+    if (failed) this.storage = null;
+  }
+
+  private discardActiveMarkerPreservingState(): void {
+    if (!this.storage) return;
+    try {
+      this.storage.removeItem(DIAGNOSTIC_ACTIVE_KEY);
+    } catch {
+      this.storage = null;
+    }
+  }
+
+  private recover(marker: ActiveSessionMarker, markerAlreadyRemoved = false): void {
     const existing = this.sessions.find((session) => session.id === marker.sessionId);
-    if (existing && existing.status !== "active") {
-      this.removeActiveMarker();
+    if (existing && (
+      existing.status !== "active" || hasTerminalCheckpoint(existing)
+    )) {
+      if (!markerAlreadyRemoved) this.removeActiveMarker();
       return;
     }
 
@@ -349,7 +397,7 @@ export class DiagnosticRecorder {
     this.recoveredSessionId = recovered.id;
     this.sortAndRetain();
     this.persistRing();
-    this.removeActiveMarker();
+    if (!markerAlreadyRemoved) this.removeActiveMarker();
   }
 
   private markerOnlySession(marker: ActiveSessionMarker): DiagnosticSession {
@@ -403,8 +451,17 @@ export class DiagnosticRecorder {
   private sortAndRetain(): void {
     this.sessions.sort(compareSessions);
     while (this.sessions.length > DIAGNOSTIC_LIMITS.retainedSessions) {
-      const terminalIndex = this.sessions.findIndex((session) => isTerminal(session));
-      this.sessions.splice(terminalIndex >= 0 ? terminalIndex : 0, 1);
+      const terminalIndex = this.sessions.findIndex(
+        (session) => isTerminal(session) &&
+          session.id !== this.activeSessionId &&
+          session.id !== this.recoveredSessionId,
+      );
+      const unprotectedIndex = this.sessions.findIndex(
+        (session) => session.id !== this.activeSessionId &&
+          session.id !== this.recoveredSessionId,
+      );
+      const index = terminalIndex >= 0 ? terminalIndex : unprotectedIndex;
+      this.sessions.splice(index >= 0 ? index : 0, 1);
     }
   }
 
@@ -559,6 +616,110 @@ export class DiagnosticRecorder {
   }
 }
 
+function ownData(value: unknown, key: string): unknown {
+  if (typeof value !== "object" || value === null) return undefined;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function safeShortText(value: unknown): string {
+  return typeof value === "string"
+    ? sanitizeSensitiveText(value).slice(0, 120)
+    : "";
+}
+
+function safeApp(value: unknown): DiagnosticSession["app"] {
+  return {
+    version: safeShortText(ownData(value, "version")),
+    buildCommit: safeShortText(ownData(value, "buildCommit")),
+  };
+}
+
+function safePositiveNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function safeEnvironment(value: unknown): DiagnosticEnvironment {
+  const capabilities = ownData(value, "capabilities");
+  return {
+    userAgent: safeShortText(ownData(value, "userAgent")),
+    platform: safeShortText(ownData(value, "platform")),
+    deviceMemoryGiB: safePositiveNumber(ownData(value, "deviceMemoryGiB")),
+    hardwareConcurrency: safePositiveNumber(ownData(value, "hardwareConcurrency")),
+    capabilities: {
+      webAssembly: ownData(capabilities, "webAssembly") === true,
+      worker: ownData(capabilities, "worker") === true,
+      offlineAudioContext: ownData(capabilities, "offlineAudioContext") === true,
+      readableStream: ownData(capabilities, "readableStream") === true,
+      responseBlob: ownData(capabilities, "responseBlob") === true,
+      randomUUID: ownData(capabilities, "randomUUID") === true,
+      localStorage: ownData(capabilities, "localStorage") === true,
+      clipboard: ownData(capabilities, "clipboard") === true,
+    },
+  };
+}
+
+function firstTwo(value: unknown): unknown[] {
+  try {
+    if (!Array.isArray(value)) return [];
+    const result: unknown[] = [];
+    for (const index of ["0", "1"]) {
+      const item = ownData(value, index);
+      if (item !== undefined) result.push(item);
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+function safeInputDetails(value: unknown): Record<string, unknown> {
+  const slot = ownData(value, "slot");
+  const mimeType = ownData(value, "mimeType");
+  const encodedBytes = ownData(value, "encodedBytes");
+  return {
+    slot: slot === "a" || slot === "b" ? slot : undefined,
+    mimeType: typeof mimeType === "string" &&
+      /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/u.test(mimeType)
+      ? mimeType
+      : undefined,
+    encodedBytes: typeof encodedBytes === "number" &&
+      Number.isFinite(encodedBytes) && encodedBytes >= 0
+      ? encodedBytes
+      : undefined,
+  };
+}
+
+function minimalSession(
+  id: string,
+  timestamp: string,
+  app: DiagnosticSession["app"],
+): DiagnosticSession {
+  return {
+    schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+    id,
+    startedAt: timestamp,
+    updatedAt: timestamp,
+    status: "active",
+    app,
+    environment: null,
+    checkpoints: [{
+      sequence: 0,
+      type: "session-start",
+      timestamp,
+      elapsedMs: 0,
+      details: {},
+    }],
+    droppedCheckpoints: 0,
+  };
+}
+
 function compareSessions(left: DiagnosticSession, right: DiagnosticSession): number {
   return left.startedAt.localeCompare(right.startedAt) || left.id.localeCompare(right.id);
 }
@@ -584,13 +745,26 @@ function serializedBytes(session: DiagnosticSession): number {
   }
 }
 
-function parseJsonMarker(raw: string | null): ActiveSessionMarker | null {
-  if (raw === null) return null;
+function migrateMarker(raw: string | null): MarkerMigration {
+  if (raw === null) return { kind: "none" };
+  let parsed: unknown;
   try {
-    return parseActiveMarker(JSON.parse(raw));
+    parsed = JSON.parse(raw);
   } catch {
-    return null;
+    return { kind: "corrupt" };
   }
+  const schemaVersion = ownData(parsed, "schemaVersion");
+  if (typeof schemaVersion === "number" && schemaVersion !== DIAGNOSTIC_SCHEMA_VERSION) {
+    return { kind: "unsupported" };
+  }
+  const marker = parseActiveMarker(parsed);
+  return marker ? { kind: "ok", marker } : { kind: "corrupt" };
+}
+
+function hasTerminalCheckpoint(session: DiagnosticSession): boolean {
+  return session.checkpoints.some((checkpoint) =>
+    TERMINAL_CHECKPOINT_TYPES.has(checkpoint.type)
+  );
 }
 
 function reconstructSession(session: DiagnosticSession): DiagnosticSession | null {
