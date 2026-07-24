@@ -92,6 +92,11 @@ const TERMINAL_STATUSES = new Set<DiagnosticSessionStatus>([
   "clean-shutdown",
   "unexpected-termination",
 ]);
+const NORMAL_TERMINAL_CHECKPOINT_TYPES = new Set<DiagnosticCheckpointType>([
+  "success",
+  "cancelled",
+  "clean-shutdown",
+]);
 type StoreLoadKind = "ok" | "corrupt" | "unsupported";
 type MarkerMigration =
   | { kind: "none" }
@@ -457,7 +462,9 @@ export class DiagnosticRecorder {
 
   private recover(marker: ActiveSessionMarker): void {
     const existing = this.sessions.find((session) => session.id === marker.sessionId);
-    if (existing && existing.status !== "active") {
+    if (existing && (
+      existing.status !== "active" || hasNormalTerminalCheckpoint(existing)
+    )) {
       this.removeActiveMarker();
       return;
     }
@@ -809,6 +816,10 @@ function compareSessions(left: DiagnosticSession, right: DiagnosticSession): num
 
 function isTerminal(session: DiagnosticSession): boolean {
   return TERMINAL_STATUSES.has(session.status);
+}
+
+function hasNormalTerminalCheckpoint(session: DiagnosticSession): boolean {
+  return session.checkpoints.some((checkpoint) => NORMAL_TERMINAL_CHECKPOINT_TYPES.has(checkpoint.type));
 }
 
 function isQuotaError(error: unknown): boolean {

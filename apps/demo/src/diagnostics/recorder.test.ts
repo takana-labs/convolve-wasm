@@ -626,14 +626,34 @@ class ToggleFailureStorage extends FakeStorage {
     },
   );
 
-  it.each(["window", "promise"] as const)(
-    "recovers an active session after an incidental %s error checkpoint",
-    (errorSource) => {
-      const storage = seedActiveSession({ status: "active", terminal: true });
+  it.each(["success", "cancelled", "clean-shutdown"] as const)(
+    "does not infer termination for an active session with explicit %s boundary",
+    (type) => {
+      const storage = seedActiveSession({ status: "active", terminal: false });
       const raw = JSON.parse(storage.getItem(DIAGNOSTIC_STORE_KEY) ?? "{}") as DiagnosticStore;
-      raw.sessions[0]!.checkpoints[0] = {
-        ...raw.sessions[0]!.checkpoints[0]!, type: "error", details: { source: errorSource },
-      };
+      raw.sessions[0]!.checkpoints.push({
+        sequence: 1, type, timestamp: raw.sessions[0]!.updatedAt, elapsedMs: 1, details: {},
+      });
+      storage.setItem(DIAGNOSTIC_STORE_KEY, JSON.stringify(raw));
+      const recorder = makeRecorder(storage);
+      expect(recorder.snapshot().sessions[0]?.status).toBe("active");
+      expect(recorder.snapshot().recoveredSessionId).toBeNull();
+      expect(storage.getItem(DIAGNOSTIC_ACTIVE_KEY)).toBeNull();
+    },
+  );
+
+  it.each(["window", "promise"] as const)(
+    "recovers an active session with only session-start and incidental %s error",
+    (errorSource) => {
+      const storage = seedActiveSession({ status: "active", terminal: false });
+      const raw = JSON.parse(storage.getItem(DIAGNOSTIC_STORE_KEY) ?? "{}") as DiagnosticStore;
+      raw.sessions[0]!.checkpoints.push({
+        sequence: 1, type: "error", timestamp: raw.sessions[0]!.updatedAt,
+        elapsedMs: 1, details: { source: errorSource },
+      });
+      expect(raw.sessions[0]!.checkpoints.map((checkpoint) => checkpoint.type)).toEqual([
+        "session-start", "error",
+      ]);
       storage.setItem(DIAGNOSTIC_STORE_KEY, JSON.stringify(raw));
       const recorder = makeRecorder(storage);
       expect(recorder.snapshot()).toMatchObject({ recoveredSessionId: "unfinished" });
